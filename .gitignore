@@ -16,6 +16,8 @@
 coverage.*
 *.coverprofile
 profile.cov
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
@@ -30,3 +32,9 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+# Environment variables
+.env
+
+# Build output
+/build
+/dist

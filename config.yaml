@@ -1,0 +1,14 @@
+# Example config file (config.yaml)
+# Place this in the same directory as your executable.
+
+crawler:
+  useragent: "My-Custom-Crawler/1.0 (RealtimeCPI)"
+  concurrency: 5 # Overrides the default 10
+  target_urls:
+    - "https://httpbin.org/status/200"
+    - "https://httpbin.org/status/404"
+    - "https://httpbin.org/delay/3" # This will test the timeout
+    - "https://httpbin.org/user-agent" # This will show our custom user agent
+
+http:
+  timeout_seconds: 2 # A low timeout to test the 'delay/3' URL

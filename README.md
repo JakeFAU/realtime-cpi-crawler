@@ -1,2 +1,3 @@
-# realtime-cpi-crawler
-A Golang webcrawler for finding prices
+# Web Crawler
+
+A web crawler written in Go.
