@@ -1,0 +1,50 @@
+# See https://pre-commit.com for more information
+# This is a curated config using only the essential hooks.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0 # Using a slightly newer, common rev
+    hooks:
+      # --- Generic file checks (All are fast and recommended) ---
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        # This will also validate your .golangci.yml and config.yaml!
+      - id: check-json
+      - id: check-merge-conflict
+        # Prevents committing ">>>>>>> HEAD"
+      - id: check-added-large-files
+        args: ["--maxkb=5000"] # 5MB limit
+      - id: detect-private-key
+
+  - repo: https://github.com/tekwizely/pre-commit-golang
+    # Using the rev you provided
+    rev: v1.0.0-rc.3
+    hooks:
+      # --- 1. Auto-Formatters (Replaces go-fmt) ---
+      # We use the '-repo' versions to run on the whole module.
+      - id: go-fumpt-repo
+        args: ["-w"] # -w = write changes
+      - id: go-imports-repo
+        args: ["-w"] # -w = write changes
+
+      # --- 2. Module Tidying ---
+      - id: go-mod-tidy-repo
+
+      # # --- 3. The Multi-Linter (Replaces vet, sec, revive, critic, etc.) ---
+      # # This ONE hook runs all linters defined in our .golangci.yml
+      # - id: golangci-lint-repo-mod
+      #   args:
+      #     - "run"
+      #     - "--fix" # Try to auto-fix issues
+      #     - "--timeout=5m"
+
+      # --- 4. Fast Test Pass ---
+      # Runs all tests in the repo, but only "short" ones.
+      # The '-race' flag is crucial for catching concurrency bugs.
+      - id: go-test-repo-mod
+        args: ["-short", "-race"]
+
+      # --- 5. Security Scan ---
+      # go-vulncheck is NOT included in golangci-lint,
+      # so we run it separately.
+      - id: go-vulncheck-repo-mod

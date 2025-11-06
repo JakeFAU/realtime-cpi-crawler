@@ -1,0 +1,133 @@
+# This file is versioned and provides a curated, strict linting configuration.
+# We explicitly disable all linters and enable only a specific, high-value set.
+version: "2"
+run:
+  # Use the Go version from your go.mod file.
+  go: "1.25"
+
+  # Set a reasonable timeout for the whole run.
+  timeout: 5m
+
+  # Lint test files, but exclude them from noisy linters
+  # in the 'issues.exclude-rules' section.
+  tests: true
+
+output:
+  # Configure the output formats.
+  formats:
+    # Use the standard 'text' output to stdout.
+    text:
+      # Print linter name in the end of issue text.
+      print-linter-name: true
+      # Print lines of code with issue.
+      print-issued-lines: true
+      # Use colors.
+      colors: true
+
+  # Sort issues by linter, then severity, then file.
+  sort-order:
+    - linter
+    - severity
+    - file
+
+linters:
+  # We will explicitly enable linters, so disable all defaults first.
+  default: none
+
+  # Enable a curated set of high-value linters.
+  enable:
+    # --- Core & Safety ---
+    - govet # Core Go vet tool.
+    - errcheck # Checks for unhandled errors. (Must-have)
+    - staticcheck # A powerful suite of static analysis checks. (Must-have)
+    - unused # Checks for unused code.
+    - ineffassign # Checks for ineffectual assignments.
+    - gosec # Security linter. (Must-have for a web-facing project)
+    - bodyclose # Checks for unclosed HTTP response bodies.
+    - wrapcheck # Ensures errors are wrapped or handled correctly.
+
+    # --- Style & Complexity ---
+    - gocritic # A large collection of opinionated style checks.
+    - revive # A modern, configurable replacement for golint.
+    - gocyclo # Checks for high cyclomatic complexity.
+    - gocognit # Checks for high cognitive complexity.
+    - lll # Checks for line length.
+    - misspell # Catches common misspellings in code and comments.
+
+    # --- Project Maintenance ---
+    - depguard # Enforces rules about which packages can be imported.
+    - forbidigo # Forbids specific function calls (like fmt.Print).
+    - nolintlint # Checks `//nolint` directives for correctness.
+
+  # --- Linter-Specific Configurations ---
+  settings:
+    errcheck:
+      # Check for errors assigned to the blank identifier `_`
+      check-blank: true
+      # Check for unhandled errors in type assertions
+      check-type-assertions: true
+
+    govet:
+      # Enable the 'shadow' check, which finds shadowed variables.
+      enable:
+        - shadow
+
+    gocyclo:
+      # Set a reasonable complexity limit.
+      min-complexity: 15
+
+    gocognit:
+      # Set a reasonable cognitive complexity limit.
+      min-complexity: 15
+
+    lll:
+      # Set a modern line length limit.
+      line-length: 120
+
+    wrapcheck:
+      # Ignore "wrapper" functions that are *expected* to not wrap.
+      ignore-sigs:
+        - errors.New
+        - errors.Unwrap
+        - fmt.Errorf
+        - .Errorf( # Catches common logger.Errorf patterns
+
+    depguard:
+      rules:
+        main:
+          # Default allow all standard library packages
+          allow:
+            - $gostd
+            - github.com/spf13/cobra
+            - github.com/spf13/viper
+            - go.uber.org/zap
+            - cloud.google.com/go
+            - github.com/JakeFAU/realtime-cpi/webcrawler
+            - github.com/jmoiron/sqlx
+            - github.com/lib/pq
+            - github.com/gocolly/colly/v2
+          # Deny specific problematic packages
+          deny:
+            - pkg: "math/rand$"
+              desc: use math/rand/v2
+            - pkg: "github.com/sirupsen/logrus"
+              desc: not allowed
+            - pkg: "github.com/pkg/errors"
+              desc: Should be replaced by standard lib errors package
+
+    forbidigo:
+      # Forbid using fmt.Print* in favor of a structured logger
+      forbid:
+        - pattern: '^fmt\.Print(f|ln)?$'
+          msg: "Use a structured logger (zap), not fmt.Print"
+
+issues:
+  # Report all issues. Don't cap them per-linter or per-file.
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+  # Allow linting to automatically fix what it can.
+  fix: true
+
+  # Other issue settings.
+  uniq-by-line: false
