@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/storage"
+	"github.com/JakeFAU/realtime-cpi/webcrawler/internal/logging"
+	"go.uber.org/zap"
 )
 
 // GCSProvider implements the storage.Provider interface for Google Cloud Storage.
@@ -25,7 +27,10 @@ func NewGCSProvider(ctx context.Context, bucketName string) (*GCSProvider, error
 	// This is a good practice to fail fast on startup if configuration is wrong.
 	bkt := client.Bucket(bucketName)
 	if _, err := bkt.Attrs(ctx); err != nil {
-		client.Close()
+		err := client.Close()
+		if err != nil {
+			logging.L.Warn("Failed to close GCS client after bucket existence check failure", zap.Error(err))
+		}
 		return nil, fmt.Errorf("failed to get GCS bucket '%s' attributes: %w", bucketName, err)
 	}
 
@@ -43,7 +48,8 @@ func (g *GCSProvider) Save(ctx context.Context, objectName string, data []byte) 
 	// Write the data to the object.
 	if _, err := wc.Write(data); err != nil {
 		// Even if the write fails, we should still try to close the writer to clean up resources.
-		_ = wc.Close() // We ignore the error from this Close, as the primary error is the write failure.
+		errTwo := wc.Close() // We ignore the error from this Close, as the primary error is the write failure.
+		logging.L.Warn("Failed to close GCS writer after write failure", zap.Error(err), zap.Error(errTwo))
 		return fmt.Errorf("failed to write data to GCS object %s: %w", objectName, err)
 	}
 

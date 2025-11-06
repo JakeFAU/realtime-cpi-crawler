@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/pubsub"
+	"github.com/JakeFAU/realtime-cpi/webcrawler/internal/logging"
+	"go.uber.org/zap"
 )
 
 // PubSubProvider implements the queue.Provider interface for Google Cloud Pub/Sub.
@@ -26,11 +28,17 @@ func NewPubSubProvider(ctx context.Context, projectID, topicID string) (*PubSubP
 	// Check if the topic exists and we have permission to publish to it.
 	exists, err := topic.Exists(ctx)
 	if err != nil {
-		client.Close()
+		err := client.Close()
+		if err != nil {
+			logging.L.Warn("Failed to close pubsub client after topic existence check failure", zap.Error(err))
+		}
 		return nil, fmt.Errorf("failed to check for topic existence: %w", err)
 	}
 	if !exists {
-		client.Close()
+		err := client.Close()
+		if err != nil {
+			logging.L.Warn("Failed to close pubsub client after topic existence check failure", zap.Error(err))
+		}
 		return nil, fmt.Errorf("pubsub topic '%s' does not exist in project '%s'", topicID, projectID)
 	}
 

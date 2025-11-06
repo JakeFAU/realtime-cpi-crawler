@@ -62,7 +62,10 @@ func (c *collyCrawler) Run(ctx context.Context) {
 
 	// Find and visit all links
 	collector.OnHTML("a[href]", func(e *colly.HTMLElement) {
-		e.Request.Visit(e.Attr("href"))
+		err := e.Request.Visit(e.Attr("href"))
+		if err != nil {
+			c.logger.Error("Failed to visit link", zap.String("url", e.Attr("href")), zap.Error(err))
+		}
 	})
 
 	// Regex to find prices

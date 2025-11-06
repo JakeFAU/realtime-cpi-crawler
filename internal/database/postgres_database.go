@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/JakeFAU/realtime-cpi/webcrawler/internal/logging"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq" // Postgres driver
+	"go.uber.org/zap"
 )
 
 // PostgresProvider implements the database.Provider interface using PostgreSQL as the backend.
@@ -27,7 +29,10 @@ func NewPostgresProvider(ctx context.Context, dsn string) (*PostgresProvider, er
 	// Ping the database to verify the connection is active.
 	if err := db.PingContext(ctx); err != nil {
 		// Close the connection if the ping fails, as it's unusable.
-		db.Close()
+		err := db.Close()
+		if err != nil {
+			logging.L.Error("Failed to ping postgres", zap.Error(err))
+		}
 		return nil, fmt.Errorf("failed to ping postgres: %w", err)
 	}
 
