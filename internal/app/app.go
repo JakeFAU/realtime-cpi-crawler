@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/JakeFAU/realtime-cpi/webcrawler/internal/database"
 	"github.com/JakeFAU/realtime-cpi/webcrawler/internal/logging"
@@ -54,84 +55,24 @@ func NewApp(ctx context.Context) (*App, error) {
 	l := logging.L // Get the global logger
 	l.Info("Initializing application services...")
 
-	// 1. Initialize Storage Provider
-	// The storage provider is responsible for saving the raw HTML content of crawled pages.
-	storageProviderType := viper.GetString("storage.provider")
-	var store storage.Provider
-	var err error
-
-	switch storageProviderType {
-	case "gcs":
-		bucketName := viper.GetString("storage.gcs.bucket_name")
-		if bucketName == "" {
-			return nil, fmt.Errorf("storage provider is 'gcs' but storage.gcs.bucket_name is not set")
-		}
-		l.Info("Using GCS storage provider", zap.String("bucket", bucketName))
-		store, err = storage.NewGCSProvider(ctx, bucketName, &storage.DefaultGCSClientFactory{})
-	case "noop":
-		l.Info("Using No-Op storage provider. HTML content will be discarded.")
-		store = &storage.NoOpProvider{}
-	default:
-		return nil, fmt.Errorf("unknown storage provider: %s", storageProviderType)
-	}
+	store, err := initStorage(ctx, l)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize storage: %w", err)
+		return nil, err
 	}
 
-	// 2. Initialize Database Provider
-	// The database provider is used to store metadata about each crawl.
-	dbProviderType := viper.GetString("database.provider")
-	var db database.Provider
-	switch dbProviderType {
-	case "postgres":
-		dsn := viper.GetString("database.postgres.dsn")
-		if dsn == "" {
-			return nil, fmt.Errorf("database provider is 'postgres' but database.postgres.dsn is not set")
-		}
-		l.Info("Connecting to PostgreSQL...")
-		db, err = database.NewPostgresProvider(ctx, dsn, &database.SQLXConnector{})
-		if err != nil {
-			return nil, fmt.Errorf("failed to initialize database: %w", err)
-		}
-	case "noop":
-		l.Info("Using No-Op database provider. Metadata will be discarded.")
-		db = &database.NoOpProvider{}
-	default:
-		return nil, fmt.Errorf("unknown database provider: %s", dbProviderType)
+	db, err := initDatabase(ctx, l)
+	if err != nil {
+		return nil, err
 	}
 
-	// 3. Initialize Queue Provider
-	// The queue provider is used to send notifications about completed crawls.
-	queueProviderType := viper.GetString("queue.provider")
-	var q queue.Provider
-	switch queueProviderType {
-	case "pubsub":
-		projectID := viper.GetString("queue.gcp.project_id")
-		topicID := viper.GetString("queue.gcp.topic_id")
-		if projectID == "" || topicID == "" {
-			return nil, fmt.Errorf("queue provider is 'pubsub' but project_id or topic_id is not set")
-		}
-		l.Info("Connecting to GCP Pub/Sub", zap.String("topic", topicID))
-		q, err = queue.NewPubSubProvider(ctx, projectID, topicID, &queue.DefaultClientFactory{})
-		if err != nil {
-			return nil, fmt.Errorf("failed to initialize queue: %w", err)
-		}
-	case "noop":
-		l.Info("Using No-Op queue provider. No messages will be sent.")
-		q = &queue.NoOpProvider{}
-	default:
-		return nil, fmt.Errorf("unknown queue provider: %s", queueProviderType)
+	q, err := initQueue(ctx, l)
+	if err != nil {
+		return nil, err
 	}
 
 	l.Info("Application services initialized successfully.")
 
-	go func() {
-		http.Handle("/metrics", promhttp.Handler())
-		l.Info("Starting metrics server on :8080")
-		if err := http.ListenAndServe(":8080", nil); err != nil {
-			l.Error("Metrics server failed", zap.Error(err))
-		}
-	}()
+	go startMetricsServer(l)
 
 	return &App{
 		logger:   l,
@@ -158,5 +99,94 @@ func (a *App) Close() {
 		// We can't do much here, as logging itself might be failing.
 		// This is a best-effort attempt.
 		a.GetLogger().Warn("Error syncing logger on shutdown", zap.Error(err))
+	}
+}
+
+func initStorage(ctx context.Context, l *zap.Logger) (storage.Provider, error) {
+	storageProviderType := viper.GetString("storage.provider")
+
+	switch storageProviderType {
+	case "gcs":
+		bucketName := viper.GetString("storage.gcs.bucket_name")
+		if bucketName == "" {
+			return nil, fmt.Errorf("storage provider is 'gcs' but storage.gcs.bucket_name is not set")
+		}
+		l.Info("Using GCS storage provider", zap.String("bucket", bucketName))
+		store, err := storage.NewGCSProvider(ctx, bucketName, &storage.DefaultGCSClientFactory{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize storage: %w", err)
+		}
+		return store, nil
+	case "noop":
+		l.Info("Using No-Op storage provider. HTML content will be discarded.")
+		return &storage.NoOpProvider{}, nil
+	default:
+		return nil, fmt.Errorf("unknown storage provider: %s", storageProviderType)
+	}
+}
+
+func initDatabase(ctx context.Context, l *zap.Logger) (database.Provider, error) {
+	dbProviderType := viper.GetString("database.provider")
+
+	switch dbProviderType {
+	case "postgres":
+		dsn := viper.GetString("database.postgres.dsn")
+		if dsn == "" {
+			return nil, fmt.Errorf("database provider is 'postgres' but database.postgres.dsn is not set")
+		}
+		l.Info("Connecting to PostgreSQL...")
+		db, err := database.NewPostgresProvider(ctx, dsn, &database.SQLXConnector{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize database: %w", err)
+		}
+		return db, nil
+	case "noop":
+		l.Info("Using No-Op database provider. Metadata will be discarded.")
+		return &database.NoOpProvider{}, nil
+	default:
+		return nil, fmt.Errorf("unknown database provider: %s", dbProviderType)
+	}
+}
+
+func initQueue(ctx context.Context, l *zap.Logger) (queue.Provider, error) {
+	queueProviderType := viper.GetString("queue.provider")
+
+	switch queueProviderType {
+	case "pubsub":
+		projectID := viper.GetString("queue.gcp.project_id")
+		topicID := viper.GetString("queue.gcp.topic_id")
+		if projectID == "" || topicID == "" {
+			return nil, fmt.Errorf("queue provider is 'pubsub' but project_id or topic_id is not set")
+		}
+		l.Info("Connecting to GCP Pub/Sub", zap.String("topic", topicID))
+		q, err := queue.NewPubSubProvider(ctx, projectID, topicID, &queue.DefaultClientFactory{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize queue: %w", err)
+		}
+		return q, nil
+	case "noop":
+		l.Info("Using No-Op queue provider. No messages will be sent.")
+		return &queue.NoOpProvider{}, nil
+	default:
+		return nil, fmt.Errorf("unknown queue provider: %s", queueProviderType)
+	}
+}
+
+func startMetricsServer(l *zap.Logger) {
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
+
+	server := &http.Server{
+		Addr:              ":8080",
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+
+	l.Info("Starting metrics server on :8080")
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		l.Error("Metrics server failed", zap.Error(err))
 	}
 }

@@ -113,6 +113,7 @@ linters:
             - google.golang.org/api/option
             - google.golang.org/grpc
             - github.com/googleapis/gax-go/v2
+            - github.com/prometheus/client_golang/prometheus
           # Deny specific problematic packages
           deny:
             - pkg: "math/rand$"
