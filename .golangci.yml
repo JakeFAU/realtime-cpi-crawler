@@ -114,6 +114,10 @@ linters:
             - google.golang.org/grpc
             - github.com/googleapis/gax-go/v2
             - github.com/prometheus/client_golang/prometheus
+            - github.com/PuerkitoBio/goquery
+            - github.com/chromedp
+            - golang.org/x/time/rate
+            - github.com/temoto/robotstxt
           # Deny specific problematic packages
           deny:
             - pkg: "math/rand$"

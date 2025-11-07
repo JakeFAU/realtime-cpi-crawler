@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/url"
 	"strings"
 	"sync"
@@ -16,7 +17,7 @@ import (
 
 // Engine orchestrates the crawling flow.
 type Engine struct {
-	cfg      CrawlerConfig
+	cfg      Config
 	fetcher  Fetcher
 	renderer Renderer
 	detector Detector
@@ -28,7 +29,16 @@ type Engine struct {
 }
 
 // NewEngine wires all dependencies together.
-func NewEngine(cfg CrawlerConfig, fetcher Fetcher, renderer Renderer, detector Detector, sink StorageSink, robots RobotsPolicy, retry RetryPolicy, logger *zap.Logger) *Engine {
+func NewEngine(
+	cfg Config,
+	fetcher Fetcher,
+	renderer Renderer,
+	detector Detector,
+	sink StorageSink,
+	robots RobotsPolicy,
+	retry RetryPolicy,
+	logger *zap.Logger,
+) *Engine {
 	if retry == nil {
 		retry = NewExponentialRetryPolicy()
 	}
@@ -97,7 +107,10 @@ func (e *Engine) Run(ctx context.Context) error {
 
 	workerWG.Wait()
 	e.metrics.log(e.logger)
-	return ctx.Err()
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("crawl interrupted: %w", err)
+	}
+	return nil
 }
 
 // Close shuts down long-lived dependencies (renderer).
@@ -105,16 +118,17 @@ func (e *Engine) Close(ctx context.Context) error {
 	if e == nil || e.renderer == nil {
 		return nil
 	}
-	return e.renderer.Close(ctx)
+	if err := e.renderer.Close(ctx); err != nil {
+		return fmt.Errorf("close renderer: %w", err)
+	}
+	return nil
 }
 
 func (e *Engine) processJob(ctx context.Context, job crawlJob, enqueue func(crawlJob)) {
 	if err := ctx.Err(); err != nil {
 		return
 	}
-	if e.robots != nil && !e.robots.Allowed(ctx, job.url) {
-		e.metrics.renderSkips.Add(1)
-		e.logger.Info("Robots disallow URL", zap.String("url", job.url))
+	if e.skipByRobots(ctx, job.url) {
 		return
 	}
 
@@ -125,58 +139,78 @@ func (e *Engine) processJob(ctx context.Context, job crawlJob, enqueue func(craw
 		return
 	}
 
-	finalPage := page
-	usedJS := false
-	if e.shouldRender(ctx, page, job) {
-		e.metrics.renderAttempts.Add(1)
-		rendered, err := e.render(ctx, job.url)
-		if err != nil {
-			e.logger.Warn("Render failed", zap.String("url", job.url), zap.Error(err))
-			e.metrics.renderErrors.Add(1)
-		} else if len(rendered.Body) > len(page.Body) {
-			finalPage = rendered
-			usedJS = true
-			e.metrics.renderSuccess.Add(1)
-		} else {
-			e.metrics.renderSkips.Add(1)
-		}
-	}
+	finalPage, usedJS := e.maybeRender(ctx, job, page)
 	finalPage.UsedJS = usedJS
 
-	path, err := e.sink.SaveHTML(ctx, finalPage)
-	if err != nil {
-		e.logger.Error("Save HTML failed", zap.String("url", finalPage.FinalURL), zap.Error(err))
+	if err := e.persistPage(ctx, finalPage); err != nil {
+		e.logger.Error("Persist page failed", zap.String("url", finalPage.FinalURL), zap.Error(err))
 		e.metrics.errors.Add(1)
 		return
 	}
+	e.enqueueChildren(finalPage, job, enqueue)
+}
+
+func (e *Engine) skipByRobots(ctx context.Context, rawURL string) bool {
+	if e.robots == nil {
+		return false
+	}
+	if e.robots.Allowed(ctx, rawURL) {
+		return false
+	}
+	e.metrics.renderSkips.Add(1)
+	e.logger.Info("Robots disallow URL", zap.String("url", rawURL))
+	return true
+}
+
+func (e *Engine) maybeRender(ctx context.Context, job crawlJob, page Page) (Page, bool) {
+	if !e.shouldRender(ctx, page, job) {
+		return page, false
+	}
+	e.metrics.renderAttempts.Add(1)
+	rendered, err := e.render(ctx, job.url)
+	switch {
+	case err != nil:
+		e.logger.Warn("Render failed", zap.String("url", job.url), zap.Error(err))
+		e.metrics.renderErrors.Add(1)
+		return page, false
+	case len(rendered.Body) > len(page.Body):
+		e.metrics.renderSuccess.Add(1)
+		return rendered, true
+	default:
+		e.metrics.renderSkips.Add(1)
+		return page, false
+	}
+}
+
+func (e *Engine) persistPage(ctx context.Context, page Page) error {
+	path, err := e.sink.SaveHTML(ctx, page)
+	if err != nil {
+		return fmt.Errorf("save html: %w", err)
+	}
 	meta := CrawlMetadata{
-		URL:       finalPage.URL,
-		FinalURL:  finalPage.FinalURL,
-		Status:    finalPage.StatusCode,
+		URL:       page.URL,
+		FinalURL:  page.FinalURL,
+		Status:    page.StatusCode,
 		Timestamp: nowUTC(),
-		UsedJS:    finalPage.UsedJS,
-		ByteSize:  len(finalPage.Body),
+		UsedJS:    page.UsedJS,
+		ByteSize:  len(page.Body),
 		Path:      path,
 	}
 	if err := e.sink.SaveMeta(ctx, meta); err != nil {
-		e.logger.Error("Save metadata failed", zap.String("url", finalPage.FinalURL), zap.Error(err))
-		e.metrics.errors.Add(1)
+		return fmt.Errorf("save metadata: %w", err)
 	}
 	e.metrics.stored.Add(1)
+	return nil
+}
 
-	if job.depth >= e.cfg.MaxDepth {
+func (e *Engine) enqueueChildren(page Page, job crawlJob, enqueue func(crawlJob)) {
+	if job.depth >= e.cfg.MaxDepth || !page.IsHTML() {
 		return
 	}
-	if !finalPage.IsHTML() {
-		return
-	}
-	for _, child := range extractLinks(finalPage) {
-		clean, parsed, err := canonicalizeURL(child)
+	for _, child := range extractLinks(page) {
+		clean, _, err := canonicalizeURL(child)
 		if err != nil {
 			continue
-		}
-		if e.cfg.EscalateOnlySameHost && parsed.Hostname() != job.seedHost {
-			// Still crawl new host; the same-host rule only affects rendering.
 		}
 		enqueue(crawlJob{
 			url:      clean,
@@ -195,13 +229,13 @@ func (e *Engine) fetchWithRetry(ctx context.Context, rawURL string) (Page, error
 			return page, nil
 		}
 		if e.retry == nil || !e.retry.ShouldRetry(err, attempt) {
-			return Page{}, err
+			return Page{}, fmt.Errorf("fetch %s: %w", rawURL, err)
 		}
 		backoff := e.retry.Backoff(attempt)
 		select {
 		case <-time.After(backoff):
 		case <-ctx.Done():
-			return Page{}, ctx.Err()
+			return Page{}, fmt.Errorf("fetch backoff interrupted: %w", ctx.Err())
 		}
 	}
 }
@@ -212,7 +246,11 @@ func (e *Engine) render(ctx context.Context, rawURL string) (Page, error) {
 	}
 	renderCtx, cancel := context.WithTimeout(ctx, e.cfg.JSRenderTimeout)
 	defer cancel()
-	return e.renderer.Render(renderCtx, rawURL)
+	page, err := e.renderer.Render(renderCtx, rawURL)
+	if err != nil {
+		return Page{}, fmt.Errorf("render %s: %w", rawURL, err)
+	}
+	return page, nil
 }
 
 func (e *Engine) shouldRender(ctx context.Context, page Page, job crawlJob) bool {

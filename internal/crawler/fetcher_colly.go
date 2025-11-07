@@ -3,6 +3,7 @@ package crawler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -18,7 +19,7 @@ type CollyFetcher struct {
 }
 
 // NewCollyFetcher constructs a configured Colly-based Fetcher.
-func NewCollyFetcher(cfg CrawlerConfig, logger *zap.Logger) (*CollyFetcher, error) {
+func NewCollyFetcher(cfg Config, logger *zap.Logger) (*CollyFetcher, error) {
 	opts := []colly.CollectorOption{
 		colly.Async(true),
 		colly.UserAgent(cfg.UserAgent),
@@ -37,13 +38,13 @@ func NewCollyFetcher(cfg CrawlerConfig, logger *zap.Logger) (*CollyFetcher, erro
 	})
 	base.SetRequestTimeout(cfg.RequestTimeout)
 
-	delay := time.Second / time.Duration(max(1, cfg.RateLimitPerDomain))
+	delay := time.Second / time.Duration(maxInt(1, cfg.RateLimitPerDomain))
 	if err := base.Limit(&colly.LimitRule{
 		DomainGlob:  "*",
 		Parallelism: cfg.Concurrency,
 		Delay:       delay,
 	}); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("set colly limit: %w", err)
 	}
 
 	return &CollyFetcher{
@@ -90,14 +91,14 @@ func (f *CollyFetcher) Fetch(ctx context.Context, rawURL string) (Page, error) {
 	})
 
 	if err := collector.Visit(rawURL); err != nil {
-		return Page{}, err
+		return Page{}, fmt.Errorf("visit %s: %w", rawURL, err)
 	}
 	collector.Wait()
 
 	select {
 	case res := <-resultCh:
 		if err := ctx.Err(); err != nil {
-			return Page{}, err
+			return Page{}, fmt.Errorf("fetch context: %w", err)
 		}
 		return res.page, res.err
 	default:
@@ -110,7 +111,7 @@ type fetchResult struct {
 	err  error
 }
 
-func max(a, b int) int {
+func maxInt(a, b int) int {
 	if a > b {
 		return a
 	}

@@ -9,10 +9,10 @@ import (
 	"github.com/spf13/viper"
 )
 
-// CrawlerConfig captures every configuration knob that influences a crawl run.
+// Config captures every configuration knob that influences a crawl run.
 // All values originate from Viper so the crawler can be configured via files,
 // env vars, or CLI flags.
-type CrawlerConfig struct {
+type Config struct {
 	Seeds                  []string
 	UserAgent              string
 	RespectRobots          bool
@@ -32,9 +32,9 @@ type CrawlerConfig struct {
 	MaxPageBytes           int64
 }
 
-// LoadCrawlerConfig constructs a CrawlerConfig by reading from Viper.
-func LoadCrawlerConfig(v *viper.Viper) (CrawlerConfig, error) {
-	cfg := CrawlerConfig{
+// LoadCrawlerConfig constructs a Config by reading from Viper.
+func LoadCrawlerConfig(v *viper.Viper) (Config, error) {
+	cfg := Config{
 		Seeds:                  v.GetStringSlice("crawler.target_urls"),
 		UserAgent:              firstSetString(v, []string{"crawler.user_agent", "crawler.useragent"}),
 		RespectRobots:          v.GetBool("crawler.respect_robots"),
@@ -57,7 +57,7 @@ func LoadCrawlerConfig(v *viper.Viper) (CrawlerConfig, error) {
 }
 
 // Validate checks for obviously bad configuration combinations.
-func (c CrawlerConfig) Validate() error {
+func (c Config) Validate() error {
 	if len(c.Seeds) == 0 {
 		return fmt.Errorf("crawler.target_urls must include at least one seed URL")
 	}

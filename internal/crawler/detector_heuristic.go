@@ -37,11 +37,25 @@ func (d *HeuristicDetector) NeedsJS(_ context.Context, page Page) bool {
 	if d == nil {
 		return false
 	}
-	bodyLen := len(page.Body)
-	if d.minHTMLBytes > 0 && bodyLen < d.minHTMLBytes {
+	switch {
+	case d.bodyBelowThreshold(page.Body):
 		return true
+	case d.containsKeywords(page.Body):
+		return true
+	default:
+		return d.missingSelectors(page.Body)
 	}
-	lowerBody := bytes.ToLower(page.Body)
+}
+
+func (d *HeuristicDetector) bodyBelowThreshold(body []byte) bool {
+	return d.minHTMLBytes > 0 && len(body) < d.minHTMLBytes
+}
+
+func (d *HeuristicDetector) containsKeywords(body []byte) bool {
+	if len(body) == 0 || len(d.keywords) == 0 {
+		return false
+	}
+	lowerBody := bytes.ToLower(body)
 	for _, kw := range d.keywords {
 		if len(kw) == 0 {
 			continue
@@ -50,10 +64,14 @@ func (d *HeuristicDetector) NeedsJS(_ context.Context, page Page) bool {
 			return true
 		}
 	}
-	if len(d.selectors) == 0 || bodyLen == 0 {
+	return false
+}
+
+func (d *HeuristicDetector) missingSelectors(body []byte) bool {
+	if len(d.selectors) == 0 || len(body) == 0 {
 		return false
 	}
-	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(page.Body))
+	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
 	if err != nil {
 		return true
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -15,7 +16,7 @@ import (
 
 func TestEngineIntegration(t *testing.T) {
 	tmp := t.TempDir()
-	cfg := CrawlerConfig{
+	cfg := Config{
 		Seeds:                  []string{"https://example.test/static"},
 		UserAgent:              "TestAgent",
 		RespectRobots:          false,
@@ -59,7 +60,9 @@ func TestEngineIntegration(t *testing.T) {
 				FinalURL:   "https://example.test/js-child",
 				StatusCode: http.StatusOK,
 				Headers:    http.Header{"Content-Type": []string{"text/html"}},
-				Body:       []byte(`<html><body><div id="content">child</div></body></html>`),
+				Body: []byte(
+					`<html><body><div id="content">child</div></body></html>`,
+				),
 			},
 		},
 	}
@@ -71,8 +74,11 @@ func TestEngineIntegration(t *testing.T) {
 				FinalURL:   "https://example.test/js",
 				StatusCode: http.StatusOK,
 				Headers:    http.Header{"Content-Type": []string{"text/html"}},
-				Body:       []byte(`<html><body><div id="content">rendered</div><a href="https://example.test/js-child"></a></body></html>`),
-				UsedJS:     true,
+				Body: []byte(
+					`<html><body><div id="content">rendered</div>` +
+						`<a href="https://example.test/js-child"></a></body></html>`,
+				),
+				UsedJS: true,
 			},
 		},
 	}
@@ -83,7 +89,16 @@ func TestEngineIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sink: %v", err)
 	}
-	engine := NewEngine(cfg, fetcher, renderer, detector, sink, NewRobotsEnforcer(false, cfg.UserAgent, logger), NewExponentialRetryPolicy(), logger)
+	engine := NewEngine(
+		cfg,
+		fetcher,
+		renderer,
+		detector,
+		sink,
+		NewRobotsEnforcer(false, cfg.UserAgent, logger),
+		NewExponentialRetryPolicy(),
+		logger,
+	)
 	if err := engine.Run(context.Background()); err != nil {
 		t.Fatalf("engine run: %v", err)
 	}
@@ -106,7 +121,7 @@ func TestEngineIntegration(t *testing.T) {
 
 func TestEngineRenderTimeout(t *testing.T) {
 	tmp := t.TempDir()
-	cfg := CrawlerConfig{
+	cfg := Config{
 		Seeds:                  []string{"https://slow.test/js"},
 		UserAgent:              "TestAgent",
 		RespectRobots:          false,
@@ -133,7 +148,9 @@ func TestEngineRenderTimeout(t *testing.T) {
 				FinalURL:   "https://slow.test/js",
 				StatusCode: http.StatusOK,
 				Headers:    http.Header{"Content-Type": []string{"text/html"}},
-				Body:       []byte(`<html><body><div data-reactroot id="app"></div></body></html>`),
+				Body: []byte(
+					`<html><body><div data-reactroot id="app"></div></body></html>`,
+				),
 			},
 		},
 	}
@@ -145,7 +162,16 @@ func TestEngineRenderTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sink: %v", err)
 	}
-	engine := NewEngine(cfg, fetcher, renderer, detector, sink, NewRobotsEnforcer(false, cfg.UserAgent, logger), NewExponentialRetryPolicy(), logger)
+	engine := NewEngine(
+		cfg,
+		fetcher,
+		renderer,
+		detector,
+		sink,
+		NewRobotsEnforcer(false, cfg.UserAgent, logger),
+		NewExponentialRetryPolicy(),
+		logger,
+	)
 	if err := engine.Run(context.Background()); err != nil {
 		t.Fatalf("engine run: %v", err)
 	}
@@ -201,7 +227,7 @@ func (s *slowRenderer) Render(ctx context.Context, rawURL string) (Page, error) 
 			UsedJS:     true,
 		}, nil
 	case <-ctx.Done():
-		return Page{}, ctx.Err()
+		return Page{}, fmt.Errorf("slow render canceled: %w", ctx.Err())
 	}
 }
 
@@ -215,6 +241,7 @@ func readMetadata(t *testing.T, root string) map[string]CrawlMetadata {
 	}
 	out := make(map[string]CrawlMetadata)
 	for _, f := range files {
+		// #nosec G304 -- test inputs originate from a controlled temp directory
 		content, err := os.ReadFile(f)
 		if err != nil {
 			t.Fatalf("read meta: %v", err)

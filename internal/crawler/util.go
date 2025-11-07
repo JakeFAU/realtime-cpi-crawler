@@ -1,7 +1,7 @@
 package crawler
 
 import (
-	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"net/url"
@@ -20,7 +20,7 @@ func containsLower(haystack, needle string) bool {
 func canonicalizeURL(raw string) (string, *url.URL, error) {
 	parsed, err := url.Parse(raw)
 	if err != nil {
-		return "", nil, err
+		return "", nil, fmt.Errorf("parse url %q: %w", raw, err)
 	}
 	parsed.Fragment = ""
 	if parsed.Scheme == "" {
@@ -48,7 +48,7 @@ func safeBasename(raw string) string {
 }
 
 func hashURL(raw string) string {
-	sum := sha1.Sum([]byte(raw))
+	sum := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(sum[:])
 }
 
@@ -62,19 +62,4 @@ func htmlFilePath(root string, page Page) string {
 		base = safeBasename(page.URL)
 	}
 	return filepath.Join(root, fmt.Sprintf("%s.html", base))
-}
-
-func metaFilePath(root string, page Page) string {
-	base := safeBasename(page.FinalURL)
-	if base == "" {
-		base = safeBasename(page.URL)
-	}
-	return filepath.Join(root, fmt.Sprintf("%s.json", base))
-}
-
-func sameHost(a, b *url.URL) bool {
-	if a == nil || b == nil {
-		return false
-	}
-	return strings.EqualFold(a.Hostname(), b.Hostname())
 }

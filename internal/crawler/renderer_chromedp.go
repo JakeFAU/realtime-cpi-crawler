@@ -34,7 +34,7 @@ type ChromedpRenderer struct {
 }
 
 // NewChromedpRenderer creates a renderer using the provided configuration.
-func NewChromedpRenderer(cfg CrawlerConfig, logger *zap.Logger) (*ChromedpRenderer, error) {
+func NewChromedpRenderer(cfg Config, logger *zap.Logger) (*ChromedpRenderer, error) {
 	if cfg.JSRenderMaxConcurrency <= 0 {
 		return nil, ErrRendererDisabled
 	}
@@ -85,15 +85,14 @@ func (r *ChromedpRenderer) Render(ctx context.Context, rawURL string) (Page, err
 		return Page{}, ErrRendererDisabled
 	}
 
-	select {
-	case r.sem <- struct{}{}:
-		defer func() { <-r.sem }()
-	case <-ctx.Done():
-		return Page{}, ctx.Err()
-	}
-
-	if err := r.waitDomainBudget(ctx, rawURL); err != nil {
+	release, err := r.acquireSlot(ctx)
+	if err != nil {
 		return Page{}, err
+	}
+	defer release()
+
+	if waitErr := r.waitDomainBudget(ctx, rawURL); waitErr != nil {
+		return Page{}, fmt.Errorf("render rate limit: %w", waitErr)
 	}
 
 	tabCtx, cancelTab := chromedp.NewContext(r.browserCtx)
@@ -102,41 +101,77 @@ func (r *ChromedpRenderer) Render(ctx context.Context, rawURL string) (Page, err
 	taskCtx, cancelTask := context.WithTimeout(tabCtx, r.timeout)
 	defer cancelTask()
 
-	if ctx.Done() != nil {
-		done := make(chan struct{})
-		go func() {
-			select {
-			case <-ctx.Done():
-				cancelTask()
-			case <-done:
-			}
-		}()
-		defer close(done)
+	stopForward := forwardCancel(ctx, cancelTask)
+	defer stopForward()
+
+	meta := newResponseMeta()
+	r.recordResponse(tabCtx, meta)
+
+	html, err := r.runChromedp(taskCtx, rawURL)
+	if err != nil {
+		return Page{}, fmt.Errorf("chromedp run: %w", err)
 	}
 
-	var html string
-	var finalURL string
-	var statusCode int
-	headers := http.Header{}
-	var once sync.Once
+	return Page{
+		URL:        rawURL,
+		FinalURL:   meta.finalURL(rawURL),
+		StatusCode: meta.statusCode,
+		Headers:    meta.headers,
+		Body:       []byte(html),
+		UsedJS:     true,
+	}, nil
+}
 
+func (r *ChromedpRenderer) acquireSlot(ctx context.Context) (func(), error) {
+	if r.sem == nil {
+		return func() {}, nil
+	}
+	select {
+	case r.sem <- struct{}{}:
+		return func() { <-r.sem }, nil
+	case <-ctx.Done():
+		return nil, fmt.Errorf("acquire render slot: %w", ctx.Err())
+	}
+}
+
+type responseMeta struct {
+	once       sync.Once
+	statusCode int
+	headers    http.Header
+	url        string
+}
+
+func newResponseMeta() *responseMeta {
+	return &responseMeta{
+		headers: make(http.Header),
+	}
+}
+
+func (m *responseMeta) finalURL(raw string) string {
+	if m.url == "" {
+		return raw
+	}
+	return m.url
+}
+
+func (r *ChromedpRenderer) recordResponse(tabCtx context.Context, meta *responseMeta) {
 	chromedp.ListenTarget(tabCtx, func(ev interface{}) {
 		resp, ok := ev.(*network.EventResponseReceived)
-		if !ok {
+		if !ok || resp.Type != network.ResourceTypeDocument {
 			return
 		}
-		if resp.Type != network.ResourceTypeDocument {
-			return
-		}
-		once.Do(func() {
-			statusCode = int(resp.Response.Status)
-			finalURL = resp.Response.URL
+		meta.once.Do(func() {
+			meta.statusCode = int(resp.Response.Status)
+			meta.url = resp.Response.URL
 			for k, v := range resp.Response.Headers {
-				headers.Add(k, fmt.Sprint(v))
+				meta.headers.Add(k, fmt.Sprint(v))
 			}
 		})
 	})
+}
 
+func (r *ChromedpRenderer) runChromedp(ctx context.Context, rawURL string) (string, error) {
+	var html string
 	tasks := chromedp.Tasks{
 		network.Enable(),
 		emulation.SetUserAgentOverride(r.userAgent),
@@ -144,22 +179,25 @@ func (r *ChromedpRenderer) Render(ctx context.Context, rawURL string) (Page, err
 		chromedp.WaitReady("body", chromedp.ByQuery),
 		chromedp.OuterHTML("html", &html, chromedp.ByQuery),
 	}
-
-	if err := chromedp.Run(taskCtx, tasks); err != nil {
-		return Page{}, err
+	if err := chromedp.Run(ctx, tasks); err != nil {
+		return "", fmt.Errorf("chromedp run: %w", err)
 	}
-	if finalURL == "" {
-		finalURL = rawURL
-	}
+	return html, nil
+}
 
-	return Page{
-		URL:        rawURL,
-		FinalURL:   finalURL,
-		StatusCode: statusCode,
-		Headers:    headers,
-		Body:       []byte(html),
-		UsedJS:     true,
-	}, nil
+func forwardCancel(parent context.Context, cancel context.CancelFunc) func() {
+	if parent == nil {
+		return func() {}
+	}
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-parent.Done():
+			cancel()
+		case <-done:
+		}
+	}()
+	return func() { close(done) }
 }
 
 func (r *ChromedpRenderer) waitDomainBudget(ctx context.Context, rawURL string) error {
@@ -168,10 +206,16 @@ func (r *ChromedpRenderer) waitDomainBudget(ctx context.Context, rawURL string) 
 	}
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
-		return err
+		return fmt.Errorf("parse render url: %w", err)
 	}
 	host := strings.ToLower(parsed.Host)
 	val, _ := r.domainLimiters.LoadOrStore(host, rate.NewLimiter(rate.Limit(r.domainQPS), 1))
-	lim := val.(*rate.Limiter)
-	return lim.Wait(ctx)
+	limiter, ok := val.(*rate.Limiter)
+	if !ok {
+		return fmt.Errorf("unexpected limiter type %T", val)
+	}
+	if err := limiter.Wait(ctx); err != nil {
+		return fmt.Errorf("wait limiter: %w", err)
+	}
+	return nil
 }

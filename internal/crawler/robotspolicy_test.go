@@ -21,7 +21,9 @@ func TestRobotsEnforcer(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/robots.txt" {
-			fmt.Fprintln(w, "User-agent: *\nDisallow: /blocked")
+			if _, err := fmt.Fprintln(w, "User-agent: *\nDisallow: /blocked"); err != nil {
+				t.Fatalf("write robots file: %v", err)
+			}
 			return
 		}
 		w.WriteHeader(http.StatusOK)

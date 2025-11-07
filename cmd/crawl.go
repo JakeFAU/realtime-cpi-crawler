@@ -24,58 +24,95 @@ func newCrawlCmd() *cobra.Command {
 provided in the configuration file. This command uses the Colly framework
 to perform the crawl.`,
 
-		// Use RunE to handle and return errors.
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			// 1. Retrieve the App interface from the context.
-			appInstance, ok := cmd.Context().Value(appKey).(App)
-			if !ok || appInstance == nil {
-				return errors.New("application services not initialized")
-			}
-
-			cfg, err := crawler.LoadCrawlerConfig(viper.GetViper())
-			if err != nil {
-				return fmt.Errorf("load crawler config: %w", err)
-			}
-
-			logger := appInstance.GetLogger()
-
-			fetcher, err := crawler.NewCollyFetcher(cfg, logger)
-			if err != nil {
-				return fmt.Errorf("init fetcher: %w", err)
-			}
-
-			var renderer crawler.Renderer
-			if cfg.FeatureRenderEnabled && cfg.JSRenderMaxConcurrency > 0 {
-				renderer, err = crawler.NewChromedpRenderer(cfg, logger)
-				if err != nil && !errors.Is(err, crawler.ErrRendererDisabled) {
-					return fmt.Errorf("init renderer: %w", err)
-				}
-				if errors.Is(err, crawler.ErrRendererDisabled) {
-					logger.Warn("Renderer disabled despite feature flag; falling back to fast path")
-				}
-			}
-
-			detector := crawler.NewHeuristicDetector(cfg.DetectorMinHTMLBytes, cfg.DetectorSelectorMust, cfg.DetectorKeywords)
-			robots := crawler.NewRobotsEnforcer(cfg.RespectRobots, cfg.UserAgent, logger)
-			sink, err := crawler.NewFileSystemSink(cfg.OutputDir, cfg.MaxPageBytes, logger)
-			if err != nil {
-				return fmt.Errorf("init sink: %w", err)
-			}
-
-			engine := crawler.NewEngine(cfg, fetcher, renderer, detector, sink, robots, crawler.NewExponentialRetryPolicy(), logger)
-			defer func() {
-				if err := engine.Close(cmd.Context()); err != nil {
-					logger.Warn("Failed to close engine", zap.Error(err))
-				}
-			}()
-
-			if err := engine.Run(cmd.Context()); err != nil && !errors.Is(err, context.Canceled) {
-				return err
-			}
-
-			logging.L.Info("Crawl command finished.")
-			return nil
-		},
+		RunE: runCrawlCommand,
 	}
 	return cmd
+}
+
+func runCrawlCommand(cmd *cobra.Command, _ []string) error {
+	appInstance, err := resolveApp(cmd.Context())
+	if err != nil {
+		return err
+	}
+
+	cfg, err := crawler.LoadCrawlerConfig(viper.GetViper())
+	if err != nil {
+		return fmt.Errorf("load crawler config: %w", err)
+	}
+
+	engine, err := buildCrawlerEngine(cfg, appInstance.GetLogger())
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if cerr := engine.Close(cmd.Context()); cerr != nil {
+			appInstance.GetLogger().Warn("Failed to close engine", zap.Error(cerr))
+		}
+	}()
+
+	if err := engine.Run(cmd.Context()); err != nil && !errors.Is(err, context.Canceled) {
+		return fmt.Errorf("run crawler: %w", err)
+	}
+
+	logging.L.Info("Crawl command finished.")
+	return nil
+}
+
+func resolveApp(ctx context.Context) (App, error) {
+	appInstance, ok := ctx.Value(appKey).(App)
+	if !ok || appInstance == nil {
+		return nil, errors.New("application services not initialized")
+	}
+	return appInstance, nil
+}
+
+func buildCrawlerEngine(cfg crawler.Config, logger *zap.Logger) (*crawler.Engine, error) {
+	fetcher, err := crawler.NewCollyFetcher(cfg, logger)
+	if err != nil {
+		return nil, fmt.Errorf("init fetcher: %w", err)
+	}
+
+	renderer, err := buildRenderer(cfg, logger)
+	if err != nil {
+		return nil, err
+	}
+
+	detector := crawler.NewHeuristicDetector(
+		cfg.DetectorMinHTMLBytes,
+		cfg.DetectorSelectorMust,
+		cfg.DetectorKeywords,
+	)
+	robots := crawler.NewRobotsEnforcer(cfg.RespectRobots, cfg.UserAgent, logger)
+	sink, err := crawler.NewFileSystemSink(cfg.OutputDir, cfg.MaxPageBytes, logger)
+	if err != nil {
+		return nil, fmt.Errorf("init sink: %w", err)
+	}
+
+	engine := crawler.NewEngine(
+		cfg,
+		fetcher,
+		renderer,
+		detector,
+		sink,
+		robots,
+		crawler.NewExponentialRetryPolicy(),
+		logger,
+	)
+	return engine, nil
+}
+
+func buildRenderer(cfg crawler.Config, logger *zap.Logger) (crawler.Renderer, error) {
+	if !cfg.FeatureRenderEnabled || cfg.JSRenderMaxConcurrency <= 0 {
+		return nil, nil
+	}
+	renderer, err := crawler.NewChromedpRenderer(cfg, logger)
+	switch {
+	case err == nil:
+		return renderer, nil
+	case errors.Is(err, crawler.ErrRendererDisabled):
+		logger.Warn("Renderer disabled despite feature flag; falling back to fast path")
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("init renderer: %w", err)
+	}
 }

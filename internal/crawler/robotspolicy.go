@@ -2,6 +2,7 @@ package crawler
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -62,7 +63,11 @@ func (r *RobotsEnforcer) Allowed(ctx context.Context, rawURL string) bool {
 func (r *RobotsEnforcer) load(ctx context.Context, parsed *url.URL) (*robotstxt.RobotsData, error) {
 	hostKey := strings.ToLower(parsed.Host)
 	if data, ok := r.cache.Load(hostKey); ok {
-		return data.(*robotstxt.RobotsData), nil
+		cached, assertOK := data.(*robotstxt.RobotsData)
+		if !assertOK {
+			return nil, fmt.Errorf("robots cache type mismatch: %T", data)
+		}
+		return cached, nil
 	}
 
 	robotsURL := *parsed
@@ -71,21 +76,25 @@ func (r *RobotsEnforcer) load(ctx context.Context, parsed *url.URL) (*robotstxt.
 	robotsURL.Fragment = ""
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, robotsURL.String(), nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("new robots request: %w", err)
 	}
 	req.Header.Set("User-Agent", r.userAgent)
 	resp, err := r.client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("fetch robots: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			r.logger.Debug("Failed to close robots response body", zap.Error(cerr))
+		}
+	}()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read robots body: %w", err)
 	}
 	data, err := robotstxt.FromStatusAndBytes(resp.StatusCode, body)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse robots: %w", err)
 	}
 	r.cache.Store(hostKey, data)
 	return data, nil

@@ -2,11 +2,11 @@ package crawler
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"math"
-	"math/rand"
+	"math/big"
 	"net"
-	"sync"
 	"time"
 )
 
@@ -15,8 +15,6 @@ type ExponentialRetryPolicy struct {
 	maxAttempts int
 	baseDelay   time.Duration
 	maxDelay    time.Duration
-	mu          sync.Mutex
-	rnd         *rand.Rand
 }
 
 // NewExponentialRetryPolicy builds a policy with sane defaults.
@@ -25,7 +23,6 @@ func NewExponentialRetryPolicy() *ExponentialRetryPolicy {
 		maxAttempts: 3,
 		baseDelay:   250 * time.Millisecond,
 		maxDelay:    5 * time.Second,
-		rnd:         rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 }
 
@@ -41,8 +38,8 @@ func (p *ExponentialRetryPolicy) ShouldRetry(err error, attempt int) bool {
 		return false
 	}
 	var netErr net.Error
-	if errors.As(err, &netErr) && netErr.Temporary() {
-		return true
+	if errors.As(err, &netErr) {
+		return netErr.Timeout()
 	}
 	return true
 }
@@ -57,11 +54,14 @@ func (p *ExponentialRetryPolicy) Backoff(attempt int) time.Duration {
 	return time.Duration(delay/2) + jitter
 }
 
-func (p *ExponentialRetryPolicy) randomJitter(max time.Duration) time.Duration {
-	if max <= 0 {
+func (p *ExponentialRetryPolicy) randomJitter(limit time.Duration) time.Duration {
+	if limit <= 0 {
 		return 0
 	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return time.Duration(p.rnd.Int63n(int64(max)))
+	bound := big.NewInt(int64(limit))
+	n, err := rand.Int(rand.Reader, bound)
+	if err != nil {
+		return limit / 2
+	}
+	return time.Duration(n.Int64())
 }

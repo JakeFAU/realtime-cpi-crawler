@@ -14,12 +14,18 @@ import (
 )
 
 func TestChromedpRenderer_Render(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `<!doctype html><html><body><script>document.body.innerHTML = '<div id="late">late content</div>';</script></body></html>`)
+	const dynamicHTML = `<!doctype html><html><body>` +
+		`<script>document.body.innerHTML = '<div id="late">late content</div>';</script>` +
+		`</body></html>`
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if _, err := fmt.Fprint(w, dynamicHTML); err != nil {
+			t.Fatalf("write response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
-	cfg := CrawlerConfig{
+	cfg := Config{
 		UserAgent:              "TestAgent",
 		JSRenderMaxConcurrency: 1,
 		JSRenderTimeout:        5 * time.Second,
@@ -33,7 +39,11 @@ func TestChromedpRenderer_Render(t *testing.T) {
 	if err != nil {
 		t.Skipf("chromedp unavailable: %v", err)
 	}
-	defer renderer.Close(context.Background())
+	t.Cleanup(func() {
+		if cerr := renderer.Close(context.Background()); cerr != nil {
+			t.Fatalf("close renderer: %v", cerr)
+		}
+	})
 
 	page, err := renderer.Render(context.Background(), srv.URL)
 	if err != nil {
