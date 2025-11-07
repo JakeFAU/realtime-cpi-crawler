@@ -11,8 +11,8 @@ import (
 
 // PubSubProvider implements the queue.Provider interface for Google Cloud Pub/Sub.
 type PubSubProvider struct {
-	client *pubsub.Client
-	topic  *pubsub.Topic
+	Client *pubsub.Client
+	Topic  *pubsub.Topic
 }
 
 // NewPubSubProvider creates a new Pub/Sub client and gets a handle to the specified topic.
@@ -43,8 +43,8 @@ func NewPubSubProvider(ctx context.Context, projectID, topicID string) (*PubSubP
 	}
 
 	return &PubSubProvider{
-		client: client,
-		topic:  topic,
+		Client: client,
+		Topic:  topic,
 	}, nil
 }
 
@@ -57,7 +57,7 @@ func (p *PubSubProvider) Publish(ctx context.Context, crawlID string) error {
 	}
 
 	// Publish returns a "result" struct immediately. The actual send is asynchronous.
-	result := p.topic.Publish(ctx, msg)
+	result := p.Topic.Publish(ctx, msg)
 
 	// We can optionally wait for the result to be acknowledged by the server.
 	// For a fire-and-forget approach, we don't block here.
@@ -71,8 +71,8 @@ func (p *PubSubProvider) Publish(ctx context.Context, crawlID string) error {
 
 // Close stops the topic's publisher and closes the underlying client connection.
 func (p *PubSubProvider) Close() error {
-	p.topic.Stop()
-	if err := p.client.Close(); err != nil {
+	p.Topic.Stop()
+	if err := p.Client.Close(); err != nil {
 		return fmt.Errorf("failed to close pubsub client: %w", err)
 	}
 	return nil

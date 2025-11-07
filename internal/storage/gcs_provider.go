@@ -11,8 +11,8 @@ import (
 
 // GCSProvider implements the storage.Provider interface for Google Cloud Storage.
 type GCSProvider struct {
-	client     *storage.Client
-	bucketName string
+	Client     *storage.Client
+	BucketName string
 }
 
 // NewGCSProvider initializes a new GCS client and verifies the connection.
@@ -35,15 +35,15 @@ func NewGCSProvider(ctx context.Context, bucketName string) (*GCSProvider, error
 	}
 
 	return &GCSProvider{
-		client:     client,
-		bucketName: bucketName,
+		Client:     client,
+		BucketName: bucketName,
 	}, nil
 }
 
 // Save uploads the given data to a specific object in the GCS bucket.
 func (g *GCSProvider) Save(ctx context.Context, objectName string, data []byte) error {
 	// Get a writer for the GCS object.
-	wc := g.client.Bucket(g.bucketName).Object(objectName).NewWriter(ctx)
+	wc := g.Client.Bucket(g.BucketName).Object(objectName).NewWriter(ctx)
 
 	// Write the data to the object.
 	if _, err := wc.Write(data); err != nil {
