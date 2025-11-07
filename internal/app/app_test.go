@@ -1,12 +1,11 @@
 // Package app_test contains unit tests for the app package.
-package app_test
+package app
 
 import (
 	"context"
 	"errors"
 	"testing"
 
-	"github.com/JakeFAU/realtime-cpi/webcrawler/internal/app"
 	"github.com/JakeFAU/realtime-cpi/webcrawler/internal/database"
 	"github.com/JakeFAU/realtime-cpi/webcrawler/internal/logging"
 	"github.com/JakeFAU/realtime-cpi/webcrawler/internal/queue"
@@ -15,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 )
 
 // MockDatabaseProvider mocks the database.Provider interface.
@@ -70,14 +70,14 @@ func TestNewApp_Success(t *testing.T) {
 	setupTest()
 	ctx := context.Background()
 
-	a, err := app.NewApp(ctx)
+	a, err := NewApp(ctx)
 	require.NoError(t, err)
 	require.NotNil(t, a)
 
-	assert.NotNil(t, a.Logger)
-	assert.IsType(t, &storage.NoOpProvider{}, a.Storage)
-	assert.IsType(t, &database.NoOpProvider{}, a.Database)
-	assert.IsType(t, &queue.NoOpProvider{}, a.Queue)
+	assert.NotNil(t, a.GetLogger())
+	assert.IsType(t, &storage.NoOpProvider{}, a.GetStorage())
+	assert.IsType(t, &database.NoOpProvider{}, a.GetDatabase())
+	assert.IsType(t, &queue.NoOpProvider{}, a.GetQueue())
 }
 
 func TestNewApp_ConfigErrors(t *testing.T) {
@@ -140,7 +140,7 @@ func TestNewApp_ConfigErrors(t *testing.T) {
 			tc.configSetup()
 			ctx := context.Background()
 
-			_, err := app.NewApp(ctx)
+			_, err := NewApp(ctx)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tc.expectedError)
 		})
@@ -150,19 +150,22 @@ func TestNewApp_ConfigErrors(t *testing.T) {
 func TestApp_Close(t *testing.T) {
 	dbMock := new(MockDatabaseProvider)
 	qMock := new(MockQueueProvider)
+	logger := zap.NewNop() // Use a "no-op" logger for tests
 
 	// Expect Close to be called and return no error.
 	dbMock.On("Close").Return(nil).Once()
 	qMock.On("Close").Return(nil).Once()
 
-	a := &app.App{
-		Logger:   logging.L,
-		Database: dbMock,
-		Queue:    qMock,
+	// THE FIX: Initialize the app with its private fields
+	a := &App{
+		logger:   logger,
+		database: dbMock,
+		queue:    qMock,
 	}
 
-	a.Close()
+	a.Close() // This will no longer panic
 
+	// Asserts will now pass
 	dbMock.AssertExpectations(t)
 	qMock.AssertExpectations(t)
 }
@@ -170,19 +173,22 @@ func TestApp_Close(t *testing.T) {
 func TestApp_Close_WithErrors(t *testing.T) {
 	dbMock := new(MockDatabaseProvider)
 	qMock := new(MockQueueProvider)
+	logger := zap.NewNop() // Use a "no-op" logger
 
 	// Expect Close to be called and return an error.
 	dbMock.On("Close").Return(errors.New("db error")).Once()
 	qMock.On("Close").Return(errors.New("queue error")).Once()
 
-	a := &app.App{
-		Logger:   logging.L,
-		Database: dbMock,
-		Queue:    qMock,
+	// THE FIX: Initialize the app with its private fields
+	a := &App{
+		logger:   logger,
+		database: dbMock,
+		queue:    qMock,
 	}
 
-	a.Close()
+	a.Close() // This will no longer panic
 
+	// Asserts will now pass
 	dbMock.AssertExpectations(t)
 	qMock.AssertExpectations(t)
 }

@@ -31,6 +31,9 @@ func InitConfig() {
 	viper.SetDefault("crawler.allowed_domains", []string{"www.google.com"})
 	viper.SetDefault("crawler.target_urls", []string{"https://www.google.com"})
 	viper.SetDefault("crawler.delay_seconds", 2)
+	viper.SetDefault("crawler.ignore_robots", false)
+	viper.SetDefault("crawler.rate_limit_backoff_seconds", 5)
+	viper.SetDefault("crawler.max_forbidden_responses", 3)
 	viper.SetDefault("http.timeout_seconds", 15)
 
 	// --- Environment Variables ---

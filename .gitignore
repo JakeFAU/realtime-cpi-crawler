@@ -41,3 +41,4 @@ go.work.sum
 
 # Special Files
 instructions.txt
+!coverage_report.out

@@ -7,6 +7,7 @@ require (
 	cloud.google.com/go/storage v1.57.1
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/gocolly/colly/v2 v2.2.0
+	github.com/googleapis/gax-go/v2 v2.15.0
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/lib/pq v1.10.9
 	github.com/spf13/cobra v1.10.1
@@ -51,7 +52,6 @@ require (
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.6 // indirect
-	github.com/googleapis/gax-go/v2 v2.15.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/kennygrant/sanitize v1.2.4 // indirect
 	github.com/nlnwa/whatwg-url v0.6.1 // indirect
