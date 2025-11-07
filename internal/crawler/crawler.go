@@ -14,7 +14,7 @@ import (
 // and passed to the crawler instance. It defines the behavior of the crawl,
 // including target domains, concurrency limits, and politeness settings.
 type Config struct {
-	AllowedDomains        []string          // List of domains the crawler is allowed to visit.
+	BlockedDomains        []string          // List of domain patterns the crawler must avoid (supports *.example.com).
 	UserAgent             string            // The User-Agent string to use for HTTP requests.
 	HTTPTimeout           time.Duration     // Timeout for HTTP requests.
 	MaxDepth              int               // Maximum depth of links to follow.

@@ -31,7 +31,7 @@ func InitConfig() {
 	viper.SetDefault("crawler.useragent", "RealtimeCPI-Crawler/1.0 (+http://github.com/JakeFAU/realtime-cpi)")
 	viper.SetDefault("crawler.concurrency", 10)
 	viper.SetDefault("crawler.max_depth", 1)
-	viper.SetDefault("crawler.allowed_domains", []string{"www.google.com"})
+	viper.SetDefault("crawler.blocked_domains", []string{})
 	viper.SetDefault("crawler.target_urls", []string{"https://www.google.com"})
 	viper.SetDefault("crawler.delay_seconds", 2)
 	viper.SetDefault("crawler.ignore_robots", false)

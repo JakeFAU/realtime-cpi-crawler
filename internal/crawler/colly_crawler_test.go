@@ -45,7 +45,6 @@ func newTestConfig(t *testing.T, targetURL string, transport http.RoundTripper) 
 	require.NoError(t, err)
 	prefix := fmt.Sprintf("%s://%s", parsed.Scheme, parsed.Host)
 	return Config{
-		AllowedDomains:        []string{parsed.Host},
 		URLFilters:            []*regexp.Regexp{regexp.MustCompile(regexp.QuoteMeta(prefix) + ".*")},
 		UserAgent:             "test-agent",
 		HTTPTimeout:           10 * time.Second,
@@ -314,6 +313,27 @@ func TestCollyCrawler_HandleErrorBlocksDomain(t *testing.T) {
 		crawler.shouldVisit("https://example.org/next"),
 		"expected domain to be blocked after forbidden response",
 	)
+}
+
+func TestCollyCrawler_ShouldVisitRespectsBlockedDomains(t *testing.T) {
+	cfg := Config{
+		BlockedDomains: []string{"example.org"},
+	}
+	crawler := newInstrumentedCrawler(t, cfg)
+
+	require.False(t, crawler.shouldVisit("https://example.org/page"))
+	require.True(t, crawler.shouldVisit("https://allowed.org/page"))
+}
+
+func TestCollyCrawler_ShouldVisitRespectsWildcardBlockedDomains(t *testing.T) {
+	cfg := Config{
+		BlockedDomains: []string{"*.ru"},
+	}
+	crawler := newInstrumentedCrawler(t, cfg)
+
+	require.False(t, crawler.shouldVisit("https://example.ru"))
+	require.False(t, crawler.shouldVisit("https://sub.example.ru"))
+	require.True(t, crawler.shouldVisit("https://example.com"))
 }
 
 func TestCollyCrawler_HandleErrorRateLimitPauses(t *testing.T) {

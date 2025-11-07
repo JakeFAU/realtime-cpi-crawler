@@ -3,8 +3,9 @@
 
 crawler:
   useragent: "My-Custom-Crawler/1.0 (RealtimeCPI)"
-  allowed_domains:
-    - "httpbin.org"
+  blocked_domains:
+    - "*.ru"
+    - "google.com"
   max_depth: 2
   concurrency: 5 # Overrides the default 10
   delay_seconds: 1
