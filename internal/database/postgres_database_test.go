@@ -24,18 +24,19 @@ func TestPostgresProvider_SaveCrawl(t *testing.T) {
 	p := database.PostgresProvider{DB: sqlxDB}
 
 	meta := database.CrawlMetadata{
-		URL:        "http://example.com",
-		StorageKey: "pages/2023-10-27/somehash.html",
-		FetchedAt:  time.Now(),
-		Metadata:   map[string]interface{}{"key": "value"},
+		URL:       "http://example.com",
+		FetchedAt: time.Now(),
+		BlobLink:  "pages/2023-10-27/somehash.html",
+		BlobHash:  "somehash",
+		Headers:   map[string]any{"key": "value"},
 	}
 
 	expectedCrawlID := "test-crawl-id"
 	// The query is a regex because the actual query is multiline
-	query := `INSERT INTO crawls (url, storage_key, fetched_at, metadata) VALUES ($1, $2, $3, $4) RETURNING id`
+	query := `INSERT INTO crawls (url, fetched_at, blob_link, blob_hash, headers) VALUES ($1, $2, $3, $4, $5) RETURNING id`
 
 	mock.ExpectQuery(regexp.QuoteMeta(query)).
-		WithArgs(meta.URL, meta.StorageKey, meta.FetchedAt, sqlmock.AnyArg()).
+		WithArgs(meta.URL, meta.FetchedAt, meta.BlobLink, meta.BlobHash, sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(expectedCrawlID))
 
 	crawlID, err := p.SaveCrawl(context.Background(), meta)

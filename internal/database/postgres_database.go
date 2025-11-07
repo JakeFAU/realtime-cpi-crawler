@@ -48,32 +48,34 @@ func NewPostgresProvider(ctx context.Context, dsn string) (*PostgresProvider, er
 //
 //	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 //	url TEXT NOT NULL,
-//	storage_key TEXT NOT NULL,
 //	fetched_at TIMESTAMPTZ NOT NULL,
-//	metadata JSONB,
+//	blob_link TEXT NOT NULL,
+//	blob_hash TEXT NOT NULL,
+//	headers JSONB,
 //	created_at TIMESTAMPTZ DEFAULT NOW()
 //
 // );
 func (p *PostgresProvider) SaveCrawl(ctx context.Context, meta CrawlMetadata) (string, error) {
-	// Marshal the metadata map into a JSON byte slice for the JSONB column.
-	metadataBytes, err := json.Marshal(meta.Metadata)
+	// Marshal the headers map into a JSON byte slice for the JSONB column.
+	headersBytes, err := json.Marshal(meta.Headers)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal metadata to JSON: %w", err)
+		return "", fmt.Errorf("failed to marshal headers to JSON: %w", err)
 	}
 
 	var crawlID string
 	query := `
-		INSERT INTO crawls (url, storage_key, fetched_at, metadata)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO crawls (url, fetched_at, blob_link, blob_hash, headers)
+		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id
 	`
 
 	// Execute the query and scan the returned ID into the crawlID variable.
 	err = p.DB.QueryRowxContext(ctx, query,
 		meta.URL,
-		meta.StorageKey,
 		meta.FetchedAt,
-		metadataBytes,
+		meta.BlobLink,
+		meta.BlobHash,
+		headersBytes,
 	).Scan(&crawlID)
 	if err != nil {
 		return "", fmt.Errorf("failed to execute insert statement: %w", err)

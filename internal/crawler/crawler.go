@@ -19,6 +19,7 @@ type Config struct {
 	InitialTargetURLs []string
 	Concurrency       int
 	URLFilters        []*regexp.Regexp
+	Delay             time.Duration
 }
 
 // Crawler defines the interface for a web crawler.

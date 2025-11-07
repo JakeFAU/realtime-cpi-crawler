@@ -24,7 +24,7 @@ func TestCollyCrawler_Run(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusOK)
-		_, err := w.Write([]byte(`<html><body><a href="/">Home</a><p>$123.45</p></body></html>`))
+		_, err := w.Write([]byte(`<html><body><a href="/">Home</a></body></html>`))
 		if err != nil {
 			panic("httptest server: failed to write response: " + err.Error())
 		}
@@ -51,6 +51,7 @@ func TestCollyCrawler_Run(t *testing.T) {
 		MaxDepth:          1,
 		InitialTargetURLs: []string{server.URL},
 		Concurrency:       1,
+		Delay:             1 * time.Second,
 	}
 
 	// 5. Create and run the crawler
@@ -85,6 +86,7 @@ func TestCollyCrawler_Run_OnError(t *testing.T) {
 		MaxDepth:          1,
 		InitialTargetURLs: []string{server.URL},
 		Concurrency:       1,
+		Delay:             1 * time.Second,
 	}
 
 	// 4. Create and run the crawler
@@ -103,7 +105,7 @@ func TestCollyCrawler_Run_StorageError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusOK)
-		_, err := w.Write([]byte(`<html><body><a href="/">Home</a><p>$123.45</p></body></html>`))
+		_, err := w.Write([]byte(`<html><body><a href="/">Home</a></body></html>`))
 		if err != nil {
 			panic("httptest server: failed to write response: " + err.Error())
 		}
@@ -131,6 +133,7 @@ func TestCollyCrawler_Run_StorageError(t *testing.T) {
 		MaxDepth:          1,
 		InitialTargetURLs: []string{server.URL},
 		Concurrency:       1,
+		Delay:             1 * time.Second,
 	}
 
 	// 5. Create and run the crawler
@@ -150,7 +153,7 @@ func TestCollyCrawler_Run_DbError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusOK)
-		_, err := w.Write([]byte(`<html><body><a href="/">Home</a><p>$123.45</p></body></html>`))
+		_, err := w.Write([]byte(`<html><body><a href="/">Home</a></body></html>`))
 		if err != nil {
 			panic("httptest server: failed to write response: " + err.Error())
 		}
@@ -176,6 +179,7 @@ func TestCollyCrawler_Run_DbError(t *testing.T) {
 		MaxDepth:          1,
 		InitialTargetURLs: []string{server.URL},
 		Concurrency:       1,
+		Delay:             1 * time.Second,
 	}
 
 	// 5. Create and run the crawler
@@ -195,7 +199,7 @@ func TestCollyCrawler_Run_QueueError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusOK)
-		_, err := w.Write([]byte(`<html><body><a href="/">Home</a><p>$123.45</p></body></html>`))
+		_, err := w.Write([]byte(`<html><body><a href="/">Home</a></body></html>`))
 		if err != nil {
 			panic("httptest server: failed to write response: " + err.Error())
 		}
@@ -222,6 +226,7 @@ func TestCollyCrawler_Run_QueueError(t *testing.T) {
 		MaxDepth:          1,
 		InitialTargetURLs: []string{server.URL},
 		Concurrency:       1,
+		Delay:             1 * time.Second,
 	}
 
 	// 5. Create and run the crawler

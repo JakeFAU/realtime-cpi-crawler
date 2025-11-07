@@ -32,6 +32,7 @@ to perform the crawl.`,
 				MaxDepth:          viper.GetInt("crawler.max_depth"),
 				InitialTargetURLs: viper.GetStringSlice("crawler.target_urls"),
 				Concurrency:       viper.GetInt("crawler.concurrency"),
+				Delay:             time.Duration(viper.GetInt("crawler.delay_seconds")) * time.Second,
 			}
 
 			// 2. Create and Run the Crawler
