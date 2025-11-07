@@ -28,9 +28,12 @@ func InitConfig() {
 	// --- Set Defaults ---
 	// Set sensible defaults for key configuration parameters. These will be used
 	// if the values are not provided in a config file or via environment variables.
-	viper.SetDefault("crawler.useragent", "RealtimeCPI-Crawler/1.0 (+http://github.com/JakeFAU/realtime-cpi)")
-	viper.SetDefault("crawler.concurrency", 10)
-	viper.SetDefault("crawler.max_depth", 1)
+	const defaultUA = "RealtimeCPI-Crawler/1.0 (+http://github.com/JakeFAU/realtime-cpi)"
+	viper.SetDefault("crawler.user_agent", defaultUA)
+	viper.SetDefault("crawler.useragent", defaultUA) // backward compatibility
+	viper.SetDefault("crawler.respect_robots", true)
+	viper.SetDefault("crawler.concurrency", 8)
+	viper.SetDefault("crawler.max_depth", 3)
 	viper.SetDefault("crawler.blocked_domains", []string{})
 	viper.SetDefault("crawler.target_urls", []string{"https://www.google.com"})
 	viper.SetDefault("crawler.delay_seconds", 2)
@@ -38,6 +41,26 @@ func InitConfig() {
 	viper.SetDefault("crawler.rate_limit_backoff_seconds", 5)
 	viper.SetDefault("crawler.max_forbidden_responses", 3)
 	viper.SetDefault("http.timeout_seconds", 15)
+
+	// Modern crawler pipeline defaults.
+	viper.SetDefault("crawler.request_timeout", "10s")
+	viper.SetDefault("crawler.rate_limit_per_domain", 2)
+	viper.SetDefault("crawler.js_render_timeout", "15s")
+	viper.SetDefault("crawler.js_render_max_concurrency", 2)
+	viper.SetDefault("crawler.js_render_domain_qps", 0.5)
+	viper.SetDefault("crawler.escalate_only_same_host", true)
+	viper.SetDefault("crawler.feature_render_enabled", false)
+	viper.SetDefault("crawler.max_page_bytes", 5*1024*1024)
+	viper.SetDefault("crawler.output_dir", "data/crawl")
+
+	viper.SetDefault("detector.min_html_bytes", 2000)
+	viper.SetDefault("detector.selector_must", ".main,.app,.content")
+	viper.SetDefault("detector.keywords", []string{
+		"__NEXT_DATA__",
+		"data-reactroot",
+		"ng-app",
+		"window.__APOLLO_STATE__",
+	})
 
 	// --- Environment Variables ---
 	// Enable Viper to read environment variables.

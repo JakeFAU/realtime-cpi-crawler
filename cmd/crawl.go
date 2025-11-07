@@ -2,14 +2,15 @@
 package cmd
 
 import (
+	"context"
 	"errors"
-	"time"
+	"fmt"
 
-	// No longer needs the 'app' package
 	"github.com/JakeFAU/realtime-cpi/webcrawler/internal/crawler"
 	"github.com/JakeFAU/realtime-cpi/webcrawler/internal/logging"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"go.uber.org/zap"
 )
 
 // newCrawlCmd creates and configures the 'crawl' subcommand.
@@ -23,44 +24,95 @@ func newCrawlCmd() *cobra.Command {
 provided in the configuration file. This command uses the Colly framework
 to perform the crawl.`,
 
-		// Use RunE to handle and return errors.
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			// 1. Retrieve the App interface from the context.
-			appInstance, ok := cmd.Context().Value(appKey).(App)
-			if !ok || appInstance == nil {
-				return errors.New("application services not initialized")
-			}
-
-			// 2. Create Crawler Config from Viper (this part was correct)
-			cfg := crawler.Config{
-				BlockedDomains:        viper.GetStringSlice("crawler.blocked_domains"),
-				UserAgent:             viper.GetString("crawler.useragent"),
-				HTTPTimeout:           time.Duration(viper.GetInt("http.timeout_seconds")) * time.Second,
-				MaxDepth:              viper.GetInt("crawler.max_depth"),
-				InitialTargetURLs:     viper.GetStringSlice("crawler.target_urls"),
-				Concurrency:           viper.GetInt("crawler.concurrency"),
-				Delay:                 time.Duration(viper.GetInt("crawler.delay_seconds")) * time.Second,
-				IgnoreRobots:          viper.GetBool("crawler.ignore_robots"),
-				RateLimitBackoff:      time.Duration(viper.GetInt("crawler.rate_limit_backoff_seconds")) * time.Second,
-				MaxForbiddenResponses: viper.GetInt("crawler.max_forbidden_responses"),
-			}
-
-			// 3. Create and Run the Crawler
-			// Use the getter methods from the App interface.
-			c := crawler.NewCollyCrawler(
-				cfg,
-				appInstance.GetLogger(),
-				appInstance.GetStorage(),
-				appInstance.GetDatabase(),
-				appInstance.GetQueue(),
-			)
-
-			// Use the command's context so the crawl can be cancelled.
-			c.Run(cmd.Context())
-
-			logging.L.Info("Crawl command finished.")
-			return nil
-		},
+		RunE: runCrawlCommand,
 	}
 	return cmd
+}
+
+func runCrawlCommand(cmd *cobra.Command, _ []string) error {
+	appInstance, err := resolveApp(cmd.Context())
+	if err != nil {
+		return err
+	}
+
+	cfg, err := crawler.LoadCrawlerConfig(viper.GetViper())
+	if err != nil {
+		return fmt.Errorf("load crawler config: %w", err)
+	}
+
+	engine, err := buildCrawlerEngine(cfg, appInstance.GetLogger())
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if cerr := engine.Close(cmd.Context()); cerr != nil {
+			appInstance.GetLogger().Warn("Failed to close engine", zap.Error(cerr))
+		}
+	}()
+
+	if err := engine.Run(cmd.Context()); err != nil && !errors.Is(err, context.Canceled) {
+		return fmt.Errorf("run crawler: %w", err)
+	}
+
+	logging.L.Info("Crawl command finished.")
+	return nil
+}
+
+func resolveApp(ctx context.Context) (App, error) {
+	appInstance, ok := ctx.Value(appKey).(App)
+	if !ok || appInstance == nil {
+		return nil, errors.New("application services not initialized")
+	}
+	return appInstance, nil
+}
+
+func buildCrawlerEngine(cfg crawler.Config, logger *zap.Logger) (*crawler.Engine, error) {
+	fetcher, err := crawler.NewCollyFetcher(cfg, logger)
+	if err != nil {
+		return nil, fmt.Errorf("init fetcher: %w", err)
+	}
+
+	renderer, err := buildRenderer(cfg, logger)
+	if err != nil {
+		return nil, err
+	}
+
+	detector := crawler.NewHeuristicDetector(
+		cfg.DetectorMinHTMLBytes,
+		cfg.DetectorSelectorMust,
+		cfg.DetectorKeywords,
+	)
+	robots := crawler.NewRobotsEnforcer(cfg.RespectRobots, cfg.UserAgent, logger)
+	sink, err := crawler.NewFileSystemSink(cfg.OutputDir, cfg.MaxPageBytes, logger)
+	if err != nil {
+		return nil, fmt.Errorf("init sink: %w", err)
+	}
+
+	engine := crawler.NewEngine(
+		cfg,
+		fetcher,
+		renderer,
+		detector,
+		sink,
+		robots,
+		crawler.NewExponentialRetryPolicy(),
+		logger,
+	)
+	return engine, nil
+}
+
+func buildRenderer(cfg crawler.Config, logger *zap.Logger) (crawler.Renderer, error) {
+	if !cfg.FeatureRenderEnabled || cfg.JSRenderMaxConcurrency <= 0 {
+		return nil, nil
+	}
+	renderer, err := crawler.NewChromedpRenderer(cfg, logger)
+	switch {
+	case err == nil:
+		return renderer, nil
+	case errors.Is(err, crawler.ErrRendererDisabled):
+		logger.Warn("Renderer disabled despite feature flag; falling back to fast path")
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("init renderer: %w", err)
+	}
 }
