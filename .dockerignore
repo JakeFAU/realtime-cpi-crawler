@@ -1,0 +1,11 @@
+.git
+.gitignore
+.github
+**/*.log
+*.local.yaml
+out/
+dist/
+build/
+tmp/
+.cache/
+node_modules/
