@@ -31,7 +31,7 @@ func (m *MockDatabaseProvider) SaveCrawl(ctx context.Context, meta database.Craw
 // Close satisfies the database.Provider interface for the mock.
 func (m *MockDatabaseProvider) Close() error {
 	args := m.Called()
-	return args.Error(0)
+	return args.Error(0) //nolint:wrapcheck
 }
 
 // MockQueueProvider mocks the queue.Provider interface.
@@ -42,13 +42,13 @@ type MockQueueProvider struct {
 // Publish satisfies the queue.Provider interface for the mock.
 func (m *MockQueueProvider) Publish(ctx context.Context, crawlID string) error {
 	args := m.Called(ctx, crawlID)
-	return args.Error(0)
+	return args.Error(0) //nolint:wrapcheck
 }
 
 // Close satisfies the queue.Provider interface for the mock.
 func (m *MockQueueProvider) Close() error {
 	args := m.Called()
-	return args.Error(0)
+	return args.Error(0) //nolint:wrapcheck
 }
 
 func TestMain(m *testing.M) {

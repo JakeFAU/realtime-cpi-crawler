@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JakeFAU/realtime-cpi/webcrawler/internal/database"
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/JakeFAU/realtime-cpi/webcrawler/internal/database"
 	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,7 +17,7 @@ import (
 func TestPostgresProvider_SaveCrawl(t *testing.T) {
 	mockDB, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer mockDB.Close()
+	defer mockDB.Close() //nolint:errcheck
 
 	sqlxDB := sqlx.NewDb(mockDB, "sqlmock")
 

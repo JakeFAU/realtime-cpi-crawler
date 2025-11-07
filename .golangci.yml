@@ -108,6 +108,10 @@ linters:
             - github.com/gocolly/colly/v2
             - github.com/stretchr/testify/mock
             - github.com/stretchr/testify/require
+            - github.com/stretchr/testify/assert
+            - github.com/DATA-DOG/go-sqlmock
+            - google.golang.org/api/option
+            - google.golang.org/grpc
           # Deny specific problematic packages
           deny:
             - pkg: "math/rand$"

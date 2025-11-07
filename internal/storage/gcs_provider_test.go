@@ -54,7 +54,8 @@ func TestGCSProvider_Save(t *testing.T) {
 		assert.Contains(t, string(body), string(objectData))
 
 		// Respond with a success message.
-		fmt.Fprintln(w, `{ "name": "`+objectName+`" }`)
+		_, err = fmt.Fprintln(w, `{ "name": "`+objectName+`" }`)
+		require.NoError(t, err)
 	})
 
 	provider, cleanup := newTestGCSProvider(t, handler)
@@ -70,7 +71,7 @@ func TestGCSProvider_Save_Error(t *testing.T) {
 	objectData := []byte("test-data")
 
 	// This handler simulates a server error.
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	})
 
