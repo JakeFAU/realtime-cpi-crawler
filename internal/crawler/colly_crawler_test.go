@@ -64,7 +64,7 @@ func TestCollyCrawler_Run(t *testing.T) {
 	mockQueue.AssertExpectations(t)
 }
 
-func TestCollyCrawler_Run_HttpError(t *testing.T) {
+func TestCollyCrawler_Run_OnError(t *testing.T) {
 	// 1. Setup a test HTTP server that returns an error
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -78,9 +78,8 @@ func TestCollyCrawler_Run_HttpError(t *testing.T) {
 
 	// 3. Create crawler config
 	cfg := Config{
-		URLFilters: []*regexp.Regexp{
-			regexp.MustCompile(regexp.QuoteMeta(server.URL) + ".*"),
-		},
+		AllowedDomains:    []string{server.URL},
+		URLFilters:        []*regexp.Regexp{regexp.MustCompile(regexp.QuoteMeta(server.URL) + ".*")},
 		UserAgent:         "test-agent",
 		HTTPTimeout:       10 * time.Second,
 		MaxDepth:          1,
@@ -89,12 +88,11 @@ func TestCollyCrawler_Run_HttpError(t *testing.T) {
 	}
 
 	// 4. Create and run the crawler
-	logger, err := zap.NewDevelopment()
-	require.NoError(t, err)
+	logger := zaptest.NewLogger(t)
 	crawler := NewCollyCrawler(cfg, logger, mockStorage, mockDB, mockQueue)
 	crawler.Run(context.Background())
 
-	// 5. Assert that the mocks were not called
+	// 5. Assert that the mocks were not called because of the HTTP error
 	mockStorage.AssertNotCalled(t, "Save", mock.Anything, mock.Anything, mock.Anything)
 	mockDB.AssertNotCalled(t, "SaveCrawl", mock.Anything, mock.Anything)
 	mockQueue.AssertNotCalled(t, "Publish", mock.Anything, mock.Anything)

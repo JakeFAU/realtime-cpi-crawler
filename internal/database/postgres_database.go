@@ -14,7 +14,7 @@ import (
 // PostgresProvider implements the database.Provider interface using PostgreSQL as the backend.
 // It uses the `sqlx` library to simplify database interactions.
 type PostgresProvider struct {
-	db *sqlx.DB
+	DB *sqlx.DB
 }
 
 // NewPostgresProvider creates a new PostgreSQL connection and pings it to ensure it's alive.
@@ -39,7 +39,7 @@ func NewPostgresProvider(ctx context.Context, dsn string) (*PostgresProvider, er
 	// TODO: Implement a database migration system (e.g., using golang-migrate/migrate)
 	// to create and manage the database schema automatically.
 
-	return &PostgresProvider{db: db}, nil
+	return &PostgresProvider{DB: db}, nil
 }
 
 // SaveCrawl inserts a new record into the 'crawls' table.
@@ -69,7 +69,7 @@ func (p *PostgresProvider) SaveCrawl(ctx context.Context, meta CrawlMetadata) (s
 	`
 
 	// Execute the query and scan the returned ID into the crawlID variable.
-	err = p.db.QueryRowxContext(ctx, query,
+	err = p.DB.QueryRowxContext(ctx, query,
 		meta.URL,
 		meta.StorageKey,
 		meta.FetchedAt,
@@ -84,7 +84,7 @@ func (p *PostgresProvider) SaveCrawl(ctx context.Context, meta CrawlMetadata) (s
 
 // Close gracefully shuts down the database connection pool.
 func (p *PostgresProvider) Close() error {
-	if err := p.db.Close(); err != nil {
+	if err := p.DB.Close(); err != nil {
 		return fmt.Errorf("failed to close postgres connection: %w", err)
 	}
 	return nil

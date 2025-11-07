@@ -4,15 +4,20 @@ import (
 	"context"
 	"fmt"
 
-	"cloud.google.com/go/pubsub"
+	"cloud.google.com/go/pubsub/v2"
+	"cloud.google.com/go/pubsub/v2/apiv1/pubsubpb"
 	"github.com/JakeFAU/realtime-cpi/webcrawler/internal/logging"
 	"go.uber.org/zap"
 )
 
 // PubSubProvider implements the queue.Provider interface for Google Cloud Pub/Sub.
 type PubSubProvider struct {
-	client *pubsub.Client
-	topic  *pubsub.Topic
+	Client *pubsub.Client
+	Topic  *pubsubpb.Topic
+}
+
+func fullTopicName(projectID, topicID string) string {
+	return fmt.Sprintf("projects/%s/topics/%s", projectID, topicID)
 }
 
 // NewPubSubProvider creates a new Pub/Sub client and gets a handle to the specified topic.
@@ -23,10 +28,20 @@ func NewPubSubProvider(ctx context.Context, projectID, topicID string) (*PubSubP
 		return nil, fmt.Errorf("failed to create pubsub client: %w", err)
 	}
 
-	topic := client.Topic(topicID)
+	request := &pubsubpb.GetTopicRequest{
+		Topic: fullTopicName(projectID, topicID),
+	}
+	topic, err := client.TopicAdminClient.GetTopic(ctx, request)
+	if err != nil {
+		closeErr := client.Close()
+		if closeErr != nil {
+			logging.L.Warn("Failed to close pubsub client after topic retrieval failure", zap.Error(closeErr))
+		}
+		return nil, fmt.Errorf("failed to get pubsub topic '%s': %w", topicID, closeErr)
+	}
 
 	// Check if the topic exists and we have permission to publish to it.
-	exists, err := topic.Exists(ctx)
+	exists := topic.State == pubsubpb.Topic_ACTIVE
 	if err != nil {
 		err := client.Close()
 		if err != nil {
@@ -43,8 +58,8 @@ func NewPubSubProvider(ctx context.Context, projectID, topicID string) (*PubSubP
 	}
 
 	return &PubSubProvider{
-		client: client,
-		topic:  topic,
+		Client: client,
+		Topic:  topic,
 	}, nil
 }
 
@@ -57,7 +72,8 @@ func (p *PubSubProvider) Publish(ctx context.Context, crawlID string) error {
 	}
 
 	// Publish returns a "result" struct immediately. The actual send is asynchronous.
-	result := p.topic.Publish(ctx, msg)
+	publisher := p.Client.Publisher(p.Topic.Name)
+	result := publisher.Publish(ctx, msg)
 
 	// We can optionally wait for the result to be acknowledged by the server.
 	// For a fire-and-forget approach, we don't block here.
@@ -71,8 +87,7 @@ func (p *PubSubProvider) Publish(ctx context.Context, crawlID string) error {
 
 // Close stops the topic's publisher and closes the underlying client connection.
 func (p *PubSubProvider) Close() error {
-	p.topic.Stop()
-	if err := p.client.Close(); err != nil {
+	if err := p.Client.Close(); err != nil {
 		return fmt.Errorf("failed to close pubsub client: %w", err)
 	}
 	return nil
