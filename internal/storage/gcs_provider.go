@@ -15,10 +15,29 @@ type GCSProvider struct {
 	BucketName string
 }
 
+// GCSClientFactory defines the interface for creating a GCS client.
+// This is used to allow for mocking the client in tests.
+type GCSClientFactory interface {
+	NewClient(ctx context.Context) (*storage.Client, error)
+}
+
+// DefaultGCSClientFactory is the default implementation of the GCSClientFactory interface.
+// It uses storage.NewClient to create a GCS client.
+type DefaultGCSClientFactory struct{}
+
+// NewClient creates a new GCS client using storage.NewClient.
+func (f *DefaultGCSClientFactory) NewClient(ctx context.Context) (*storage.Client, error) {
+	client, err := storage.NewClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("create storage client: %w", err)
+	}
+	return client, nil
+}
+
 // NewGCSProvider initializes a new GCS client and verifies the connection.
 // Authentication is handled automatically via Google's "Application Default Credentials" (ADC).
-func NewGCSProvider(ctx context.Context, bucketName string) (*GCSProvider, error) {
-	client, err := storage.NewClient(ctx)
+func NewGCSProvider(ctx context.Context, bucketName string, factory GCSClientFactory) (*GCSProvider, error) {
+	client, err := factory.NewClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GCS client: %w", err)
 	}

@@ -11,13 +11,11 @@ import (
 // CrawlMetadata holds the essential information about a completed crawl job.
 // This struct is what gets stored in the database.
 type CrawlMetadata struct {
-	URL        string    `db:"url"`
-	StorageKey string    `db:"storage_key"` // The path/key in the blob storage (e.g., GCS).
-	FetchedAt  time.Time `db:"fetched_at"`
-
-	// Metadata holds flexible, job-specific data such as country, currency, or crawl depth.
-	// This is stored in a JSONB column in PostgreSQL, allowing for schema flexibility.
-	Metadata map[string]any `db:"metadata"`
+	URL       string         `db:"url"`
+	FetchedAt time.Time      `db:"fetched_at"`
+	BlobLink  string         `db:"blob_link"`
+	BlobHash  string         `db:"blob_hash"`
+	Headers   map[string]any `db:"headers"`
 }
 
 // Provider defines the common interface for our database layer.

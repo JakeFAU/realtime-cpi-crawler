@@ -112,6 +112,7 @@ linters:
             - github.com/DATA-DOG/go-sqlmock
             - google.golang.org/api/option
             - google.golang.org/grpc
+            - github.com/googleapis/gax-go/v2
           # Deny specific problematic packages
           deny:
             - pkg: "math/rand$"

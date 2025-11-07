@@ -18,10 +18,30 @@ import (
 // like the logger, database, storage provider, and message queue.
 // This struct is initialized once at startup and passed to the components that need it.
 type App struct {
-	Logger   *zap.Logger
-	Storage  storage.Provider
-	Database database.Provider
-	Queue    queue.Provider
+	logger   *zap.Logger
+	storage  storage.Provider
+	database database.Provider
+	queue    queue.Provider
+}
+
+// GetLogger returns the shared zap logger instance for request-scoped logging.
+func (a *App) GetLogger() *zap.Logger {
+	return a.logger
+}
+
+// GetStorage exposes the configured blob storage provider.
+func (a *App) GetStorage() storage.Provider {
+	return a.storage
+}
+
+// GetDatabase provides access to the crawl metadata database provider.
+func (a *App) GetDatabase() database.Provider {
+	return a.database
+}
+
+// GetQueue returns the queue provider used to publish crawl notifications.
+func (a *App) GetQueue() queue.Provider {
+	return a.queue
 }
 
 // NewApp creates and initializes a new App struct based on the application's configuration.
@@ -45,7 +65,7 @@ func NewApp(ctx context.Context) (*App, error) {
 			return nil, fmt.Errorf("storage provider is 'gcs' but storage.gcs.bucket_name is not set")
 		}
 		l.Info("Using GCS storage provider", zap.String("bucket", bucketName))
-		store, err = storage.NewGCSProvider(ctx, bucketName)
+		store, err = storage.NewGCSProvider(ctx, bucketName, &storage.DefaultGCSClientFactory{})
 	case "noop":
 		l.Info("Using No-Op storage provider. HTML content will be discarded.")
 		store = &storage.NoOpProvider{}
@@ -67,7 +87,7 @@ func NewApp(ctx context.Context) (*App, error) {
 			return nil, fmt.Errorf("database provider is 'postgres' but database.postgres.dsn is not set")
 		}
 		l.Info("Connecting to PostgreSQL...")
-		db, err = database.NewPostgresProvider(ctx, dsn)
+		db, err = database.NewPostgresProvider(ctx, dsn, &database.SQLXConnector{})
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize database: %w", err)
 		}
@@ -90,7 +110,7 @@ func NewApp(ctx context.Context) (*App, error) {
 			return nil, fmt.Errorf("queue provider is 'pubsub' but project_id or topic_id is not set")
 		}
 		l.Info("Connecting to GCP Pub/Sub", zap.String("topic", topicID))
-		q, err = queue.NewPubSubProvider(ctx, projectID, topicID)
+		q, err = queue.NewPubSubProvider(ctx, projectID, topicID, &queue.DefaultClientFactory{})
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize queue: %w", err)
 		}
@@ -103,29 +123,29 @@ func NewApp(ctx context.Context) (*App, error) {
 
 	l.Info("Application services initialized successfully.")
 	return &App{
-		Logger:   l,
-		Storage:  store,
-		Database: db,
-		Queue:    q,
+		logger:   l,
+		storage:  store,
+		database: db,
+		queue:    q,
 	}, nil
 }
 
 // Close gracefully shuts down all services in the App container.
 // It is called by a Cobra hook after the command finishes execution.
 func (a *App) Close() {
-	a.Logger.Info("Shutting down application services...")
-	if err := a.Database.Close(); err != nil {
-		a.Logger.Warn("Error closing database connection", zap.Error(err))
+	a.GetLogger().Info("Shutting down application services...")
+	if err := a.GetDatabase().Close(); err != nil {
+		a.GetLogger().Warn("Error closing database connection", zap.Error(err))
 	}
-	if err := a.Queue.Close(); err != nil {
-		a.Logger.Warn("Error closing queue client", zap.Error(err))
+	if err := a.GetQueue().Close(); err != nil {
+		a.GetLogger().Warn("Error closing queue client", zap.Error(err))
 	}
 	// Note: The GCS storage client does not require an explicit close operation.
 
 	// Flushing the logger buffer is important to ensure all logs are written before the application exits.
-	if err := a.Logger.Sync(); err != nil {
+	if err := a.GetLogger().Sync(); err != nil {
 		// We can't do much here, as logging itself might be failing.
 		// This is a best-effort attempt.
-		a.Logger.Warn("Error syncing logger on shutdown", zap.Error(err))
+		a.GetLogger().Warn("Error syncing logger on shutdown", zap.Error(err))
 	}
 }

@@ -3,7 +3,14 @@
 
 crawler:
   useragent: "My-Custom-Crawler/1.0 (RealtimeCPI)"
+  allowed_domains:
+    - "httpbin.org"
+  max_depth: 2
   concurrency: 5 # Overrides the default 10
+  delay_seconds: 1
+  ignore_robots: false
+  rate_limit_backoff_seconds: 5
+  max_forbidden_responses: 3
   target_urls:
     - "https://httpbin.org/status/200"
     - "https://httpbin.org/status/404"

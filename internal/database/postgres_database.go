@@ -11,17 +11,42 @@ import (
 	"go.uber.org/zap"
 )
 
+// DBTX represents a database transaction, which can be either a *sqlx.DB or *sqlx.Tx.
+// This allows for methods to be transaction-aware.
+type DBTX interface {
+	QueryRowxContext(ctx context.Context, query string, args ...interface{}) *sqlx.Row
+}
+
 // PostgresProvider implements the database.Provider interface using PostgreSQL as the backend.
 // It uses the `sqlx` library to simplify database interactions.
 type PostgresProvider struct {
 	DB *sqlx.DB
 }
 
+// Connector defines the interface for connecting to a database.
+// This is used to allow for mocking the connection in tests.
+type Connector interface {
+	Connect(ctx context.Context, driverName, dataSourceName string) (*sqlx.DB, error)
+}
+
+// SQLXConnector is the default implementation of the Connector interface.
+// It uses sqlx.ConnectContext to connect to the database.
+type SQLXConnector struct{}
+
+// Connect connects to the database using sqlx.ConnectContext.
+func (c *SQLXConnector) Connect(ctx context.Context, driverName, dataSourceName string) (*sqlx.DB, error) {
+	db, err := sqlx.ConnectContext(ctx, driverName, dataSourceName)
+	if err != nil {
+		return nil, fmt.Errorf("connect to %s: %w", driverName, err)
+	}
+	return db, nil
+}
+
 // NewPostgresProvider creates a new PostgreSQL connection and pings it to ensure it's alive.
 // The dsn (Data Source Name) is expected in the standard format, e.g.,
 // "postgres://user:pass@host:port/dbname?sslmode=disable"
-func NewPostgresProvider(ctx context.Context, dsn string) (*PostgresProvider, error) {
-	db, err := sqlx.ConnectContext(ctx, "postgres", dsn)
+func NewPostgresProvider(ctx context.Context, dsn string, connector Connector) (*PostgresProvider, error) {
+	db, err := connector.Connect(ctx, "postgres", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to postgres: %w", err)
 	}
@@ -48,32 +73,38 @@ func NewPostgresProvider(ctx context.Context, dsn string) (*PostgresProvider, er
 //
 //	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 //	url TEXT NOT NULL,
-//	storage_key TEXT NOT NULL,
 //	fetched_at TIMESTAMPTZ NOT NULL,
-//	metadata JSONB,
+//	blob_link TEXT NOT NULL,
+//	blob_hash TEXT NOT NULL,
+//	headers JSONB,
 //	created_at TIMESTAMPTZ DEFAULT NOW()
 //
 // );
 func (p *PostgresProvider) SaveCrawl(ctx context.Context, meta CrawlMetadata) (string, error) {
-	// Marshal the metadata map into a JSON byte slice for the JSONB column.
-	metadataBytes, err := json.Marshal(meta.Metadata)
+	return p.saveCrawl(ctx, p.DB, meta)
+}
+
+func (p *PostgresProvider) saveCrawl(ctx context.Context, db DBTX, meta CrawlMetadata) (string, error) {
+	// Marshal the headers map into a JSON byte slice for the JSONB column.
+	headersBytes, err := json.Marshal(meta.Headers)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal metadata to JSON: %w", err)
+		return "", fmt.Errorf("failed to marshal headers to JSON: %w", err)
 	}
 
 	var crawlID string
 	query := `
-		INSERT INTO crawls (url, storage_key, fetched_at, metadata)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO crawls (url, fetched_at, blob_link, blob_hash, headers)
+		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id
 	`
 
 	// Execute the query and scan the returned ID into the crawlID variable.
-	err = p.DB.QueryRowxContext(ctx, query,
+	err = db.QueryRowxContext(ctx, query,
 		meta.URL,
-		meta.StorageKey,
 		meta.FetchedAt,
-		metadataBytes,
+		meta.BlobLink,
+		meta.BlobHash,
+		headersBytes,
 	).Scan(&crawlID)
 	if err != nil {
 		return "", fmt.Errorf("failed to execute insert statement: %w", err)
