@@ -21,5 +21,5 @@ func (m *MockProvider) SaveCrawl(ctx context.Context, meta CrawlMetadata) (strin
 // Close is the mock implementation of the Close method.
 func (m *MockProvider) Close() error {
 	args := m.Called()
-	return args.Error(0)
+	return args.Error(0) //nolint:wrapcheck
 }

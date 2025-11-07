@@ -15,11 +15,11 @@ type MockProvider struct {
 // Publish is the mock implementation of the Publish method.
 func (m *MockProvider) Publish(ctx context.Context, crawlID string) error {
 	args := m.Called(ctx, crawlID)
-	return args.Error(0)
+	return args.Error(0) //nolint:wrapcheck
 }
 
 // Close is the mock implementation of the Close method.
 func (m *MockProvider) Close() error {
 	args := m.Called()
-	return args.Error(0)
+	return args.Error(0) //nolint:wrapcheck
 }

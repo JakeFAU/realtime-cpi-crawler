@@ -15,5 +15,5 @@ type MockProvider struct {
 // Save is the mock implementation of the Save method.
 func (m *MockProvider) Save(ctx context.Context, objectName string, data []byte) error {
 	args := m.Called(ctx, objectName, data)
-	return args.Error(0)
+	return args.Error(0) //nolint:wrapcheck
 }
