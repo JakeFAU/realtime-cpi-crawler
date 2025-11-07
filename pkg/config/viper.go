@@ -11,8 +11,11 @@ import (
 	"go.uber.org/zap"
 )
 
-// InitConfig initializes Viper to read configuration from files and environment variables.
-// This function is called once at application startup.
+// InitConfig initializes the application's configuration using Viper.
+// It sets up default values, defines configuration search paths, and enables
+// reading from environment variables. This function is designed to be called
+// once at application startup to ensure that configuration is loaded and
+// available to all other packages.
 func InitConfig() {
 	// --- Set Search Paths ---
 	// Define the name of the config file to look for (without extension).

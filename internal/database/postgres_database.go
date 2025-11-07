@@ -42,9 +42,9 @@ func (c *SQLXConnector) Connect(ctx context.Context, driverName, dataSourceName 
 	return db, nil
 }
 
-// NewPostgresProvider creates a new PostgreSQL connection and pings it to ensure it's alive.
-// The dsn (Data Source Name) is expected in the standard format, e.g.,
-// "postgres://user:pass@host:port/dbname?sslmode=disable"
+// NewPostgresProvider creates a new PostgreSQL database provider.
+// It establishes a connection to the database and pings it to ensure connectivity.
+// It takes a DSN (Data Source Name) and a Connector interface for connecting.
 func NewPostgresProvider(ctx context.Context, dsn string, connector Connector) (*PostgresProvider, error) {
 	db, err := connector.Connect(ctx, "postgres", dsn)
 	if err != nil {
@@ -67,19 +67,9 @@ func NewPostgresProvider(ctx context.Context, dsn string, connector Connector) (
 	return &PostgresProvider{DB: db}, nil
 }
 
-// SaveCrawl inserts a new record into the 'crawls' table.
-// It assumes a table schema like:
-// CREATE TABLE crawls (
-//
-//	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-//	url TEXT NOT NULL,
-//	fetched_at TIMESTAMPTZ NOT NULL,
-//	blob_link TEXT NOT NULL,
-//	blob_hash TEXT NOT NULL,
-//	headers JSONB,
-//	created_at TIMESTAMPTZ DEFAULT NOW()
-//
-// );
+// SaveCrawl inserts a new crawl metadata record into the database.
+// It marshals the headers into JSON and executes an INSERT statement.
+// It returns the newly created crawl ID.
 func (p *PostgresProvider) SaveCrawl(ctx context.Context, meta CrawlMetadata) (string, error) {
 	return p.saveCrawl(ctx, p.DB, meta)
 }

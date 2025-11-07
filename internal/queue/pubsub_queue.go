@@ -35,14 +35,15 @@ type topicAdmin interface {
 // --- 2. Provider Implementation (Composed of Interfaces) ---
 
 // PubSubProvider implements the queue.Provider interface using GCP Pub/Sub.
-// It is composed of interfaces for testability.
+// It is responsible for publishing messages to a Pub/Sub topic.
 type PubSubProvider struct {
 	publisher publisher
 	client    clientCloser
 }
 
-// Publish sends a message containing the crawlID to the Pub/Sub topic.
-// This is a non-blocking, fire-and-forget operation.
+// Publish sends a message containing the crawlID to the configured Pub/Sub topic.
+// It's an asynchronous, "fire-and-forget" operation. The actual message sending
+// happens in the background.
 func (p *PubSubProvider) Publish(ctx context.Context, crawlID string) error {
 	msg := &pubsub.Message{
 		Data: []byte(crawlID),
@@ -90,8 +91,8 @@ func fullTopicName(projectID, topicID string) string {
 }
 
 // NewPubSubProvider creates a new Pub/Sub provider.
-// It uses the factory to create clients, verifies the topic, and returns a
-// configured PubSubProvider.
+// It uses a factory to create the necessary GCP clients, verifies that the topic exists
+// and is active, and returns a configured PubSubProvider ready for use.
 func NewPubSubProvider(ctx context.Context, projectID, topicID string, factory ClientFactory) (*PubSubProvider, error) {
 	// Use the factory to get the concrete clients
 	client, err := factory.NewClients(ctx, projectID)

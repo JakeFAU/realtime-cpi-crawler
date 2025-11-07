@@ -23,6 +23,7 @@ const (
 )
 
 // collyCrawler implements the Crawler interface using the Colly library.
+// It orchestrates the crawling process, including handling retries, backoff, and data persistence.
 type collyCrawler struct {
 	config  Config
 	logger  *zap.Logger
@@ -36,6 +37,8 @@ type collyCrawler struct {
 }
 
 // NewCollyCrawler creates a new instance of a Colly-based crawler.
+// It takes the crawler configuration and the application's service providers as input.
+// It returns a configured Crawler interface, ready to be started.
 func NewCollyCrawler(
 	config Config,
 	logger *zap.Logger,
@@ -57,6 +60,8 @@ func NewCollyCrawler(
 }
 
 // Run starts the crawling process.
+// It initializes the Colly collector and starts the crawl from the seed URLs.
+// This is a blocking call that will continue until the crawl is complete or the context is cancelled.
 func (c *collyCrawler) Run(ctx context.Context) {
 	collector := c.initCollector(ctx)
 
