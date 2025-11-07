@@ -49,6 +49,7 @@ func (c *collyCrawler) Run(ctx context.Context) {
 		colly.MaxDepth(c.config.MaxDepth),
 		colly.UserAgent(c.config.UserAgent),
 		colly.Async(true),
+		colly.URLFilters(c.config.URLFilters...),
 	)
 
 	err := collector.Limit(&colly.LimitRule{
