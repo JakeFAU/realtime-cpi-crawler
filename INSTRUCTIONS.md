@@ -6,7 +6,7 @@ This manual provides comprehensive instructions on how to use, configure, and op
 
 1. [Usage](#usage)
 2. [Configuration](#configuration)
-   * [`config.yaml` File](#configyaml-file)
+    * [`config.yaml` File](#configyaml-file)
     * [Environment Variables](#environment-variables)
     * [Configuration Precedence](#configuration-precedence)
 3. [Configuration Settings Reference](#configuration-settings-reference)
@@ -57,9 +57,9 @@ A sample `config.yaml` is provided in the project root, which you can copy and m
 
 crawler:
   useragent: "My-Custom-Crawler/1.0 (RealtimeCPI)"
-  allowed_domains:
-    - "example.com"
-    - "anothersite.org"
+  blocked_domains:
+    - "*.ru"
+    - "google.com"
   max_depth: 2
   concurrency: 5
   delay_seconds: 1
@@ -134,16 +134,16 @@ These settings control the core behavior of the web scraping engine.
           useragent: "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
         ```
 
-* **`crawler.allowed_domains`** ([]string)
-  * **Description:** A list of domain names (e.g., `example.com`, `sub.example.org`) that the crawler is permitted to visit. URLs outside these domains will be ignored.
-  * **Default:** `["www.google.com"]`
+* **`crawler.blocked_domains`** ([]string)
+  * **Description:** A list of domain patterns (e.g., `google.com`, `*.ru`) the crawler must avoid. Supports leading wildcards to block entire TLDs or subtrees.
+  * **Default:** `[]`
   * **Example:**
 
         ```yaml
         crawler:
-          allowed_domains:
-            - "shop.com"
-            - "product-data.net"
+          blocked_domains:
+            - "*.ru"
+            - "tracking.example.com"
         ```
 
 * **`crawler.max_depth`** (int)

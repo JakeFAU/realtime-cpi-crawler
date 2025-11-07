@@ -31,9 +31,10 @@ type collyCrawler struct {
 	db      database.Provider
 	queue   queue.Provider
 
-	visits  visitTracker
-	domains domainBlocker
-	pauser  pauseController
+	visits    visitTracker
+	domains   domainBlocker
+	blocklist *domainPatternBlocklist
+	pauser    pauseController
 }
 
 // NewCollyCrawler creates a new instance of a Colly-based crawler.
@@ -55,7 +56,10 @@ func NewCollyCrawler(
 		queue:   queueProvider,
 		visits:  newConcurrentVisitTracker(),
 		domains: newThresholdDomainBlocker(cfg.MaxForbiddenResponses),
-		pauser:  &timerPauseController{},
+		blocklist: newDomainPatternBlocklist(
+			cfg.BlockedDomains,
+		),
+		pauser: &timerPauseController{},
 	}
 }
 
@@ -77,9 +81,6 @@ func (c *collyCrawler) initCollector(ctx context.Context) *colly.Collector {
 		colly.MaxDepth(c.config.MaxDepth),
 		colly.UserAgent(c.config.UserAgent),
 		colly.Async(true),
-	}
-	if len(c.config.AllowedDomains) > 0 {
-		opts = append(opts, colly.AllowedDomains(c.config.AllowedDomains...))
 	}
 	if len(c.config.URLFilters) > 0 {
 		opts = append(opts, colly.URLFilters(c.config.URLFilters...))
@@ -203,6 +204,10 @@ func (c *collyCrawler) shouldVisit(rawURL string) bool {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		c.logger.Warn("Skipping malformed URL", zap.String("url", rawURL), zap.Error(err))
+		return false
+	}
+	if host := parsed.Hostname(); host != "" && c.blocklist != nil && c.blocklist.IsBlocked(host) {
+		c.logger.Info("Skipping domain blocked by configuration", zap.String("url", rawURL), zap.String("host", host))
 		return false
 	}
 	if c.domains.IsBlocked(parsed.Host) {

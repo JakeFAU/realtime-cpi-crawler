@@ -33,7 +33,7 @@ to perform the crawl.`,
 
 			// 2. Create Crawler Config from Viper (this part was correct)
 			cfg := crawler.Config{
-				AllowedDomains:        viper.GetStringSlice("crawler.allowed_domains"),
+				BlockedDomains:        viper.GetStringSlice("crawler.blocked_domains"),
 				UserAgent:             viper.GetString("crawler.useragent"),
 				HTTPTimeout:           time.Duration(viper.GetInt("http.timeout_seconds")) * time.Second,
 				MaxDepth:              viper.GetInt("crawler.max_depth"),
