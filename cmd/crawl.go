@@ -12,8 +12,9 @@ import (
 	"github.com/spf13/viper"
 )
 
-// newCrawlCmd creates the `crawl` subcommand.
-// It no longer accepts any arguments.
+// newCrawlCmd creates and configures the 'crawl' subcommand.
+// This command is responsible for initiating the web crawling process based on the application's configuration.
+// It retrieves the application instance from the context and uses it to create and run the crawler.
 func newCrawlCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "crawl",

@@ -1,3 +1,5 @@
+// Package cmd implements the command-line interface for the webcrawler.
+// It uses the Cobra library to create and manage commands.
 package cmd
 
 import (
