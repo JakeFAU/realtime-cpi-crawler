@@ -2,14 +2,15 @@
 package cmd
 
 import (
+	"context"
 	"errors"
-	"time"
+	"fmt"
 
-	// No longer needs the 'app' package
 	"github.com/JakeFAU/realtime-cpi/webcrawler/internal/crawler"
 	"github.com/JakeFAU/realtime-cpi/webcrawler/internal/logging"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"go.uber.org/zap"
 )
 
 // newCrawlCmd creates and configures the 'crawl' subcommand.
@@ -31,32 +32,46 @@ to perform the crawl.`,
 				return errors.New("application services not initialized")
 			}
 
-			// 2. Create Crawler Config from Viper (this part was correct)
-			cfg := crawler.Config{
-				BlockedDomains:        viper.GetStringSlice("crawler.blocked_domains"),
-				UserAgent:             viper.GetString("crawler.useragent"),
-				HTTPTimeout:           time.Duration(viper.GetInt("http.timeout_seconds")) * time.Second,
-				MaxDepth:              viper.GetInt("crawler.max_depth"),
-				InitialTargetURLs:     viper.GetStringSlice("crawler.target_urls"),
-				Concurrency:           viper.GetInt("crawler.concurrency"),
-				Delay:                 time.Duration(viper.GetInt("crawler.delay_seconds")) * time.Second,
-				IgnoreRobots:          viper.GetBool("crawler.ignore_robots"),
-				RateLimitBackoff:      time.Duration(viper.GetInt("crawler.rate_limit_backoff_seconds")) * time.Second,
-				MaxForbiddenResponses: viper.GetInt("crawler.max_forbidden_responses"),
+			cfg, err := crawler.LoadCrawlerConfig(viper.GetViper())
+			if err != nil {
+				return fmt.Errorf("load crawler config: %w", err)
 			}
 
-			// 3. Create and Run the Crawler
-			// Use the getter methods from the App interface.
-			c := crawler.NewCollyCrawler(
-				cfg,
-				appInstance.GetLogger(),
-				appInstance.GetStorage(),
-				appInstance.GetDatabase(),
-				appInstance.GetQueue(),
-			)
+			logger := appInstance.GetLogger()
 
-			// Use the command's context so the crawl can be cancelled.
-			c.Run(cmd.Context())
+			fetcher, err := crawler.NewCollyFetcher(cfg, logger)
+			if err != nil {
+				return fmt.Errorf("init fetcher: %w", err)
+			}
+
+			var renderer crawler.Renderer
+			if cfg.FeatureRenderEnabled && cfg.JSRenderMaxConcurrency > 0 {
+				renderer, err = crawler.NewChromedpRenderer(cfg, logger)
+				if err != nil && !errors.Is(err, crawler.ErrRendererDisabled) {
+					return fmt.Errorf("init renderer: %w", err)
+				}
+				if errors.Is(err, crawler.ErrRendererDisabled) {
+					logger.Warn("Renderer disabled despite feature flag; falling back to fast path")
+				}
+			}
+
+			detector := crawler.NewHeuristicDetector(cfg.DetectorMinHTMLBytes, cfg.DetectorSelectorMust, cfg.DetectorKeywords)
+			robots := crawler.NewRobotsEnforcer(cfg.RespectRobots, cfg.UserAgent, logger)
+			sink, err := crawler.NewFileSystemSink(cfg.OutputDir, cfg.MaxPageBytes, logger)
+			if err != nil {
+				return fmt.Errorf("init sink: %w", err)
+			}
+
+			engine := crawler.NewEngine(cfg, fetcher, renderer, detector, sink, robots, crawler.NewExponentialRetryPolicy(), logger)
+			defer func() {
+				if err := engine.Close(cmd.Context()); err != nil {
+					logger.Warn("Failed to close engine", zap.Error(err))
+				}
+			}()
+
+			if err := engine.Run(cmd.Context()); err != nil && !errors.Is(err, context.Canceled) {
+				return err
+			}
 
 			logging.L.Info("Crawl command finished.")
 			return nil
