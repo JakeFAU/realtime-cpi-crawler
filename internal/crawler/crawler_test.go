@@ -3,6 +3,7 @@ package crawler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -18,7 +19,14 @@ type MockFetcher struct {
 
 func (m *MockFetcher) Fetch(ctx context.Context, rawURL string) (Page, error) {
 	args := m.Called(ctx, rawURL)
-	return args.Get(0).(Page), args.Error(1)
+	page, ok := args.Get(0).(Page)
+	if !ok {
+		return Page{}, fmt.Errorf("mock fetch: missing page return")
+	}
+	if err := args.Error(1); err != nil {
+		return page, fmt.Errorf("mock fetch: %w", err)
+	}
+	return page, nil
 }
 
 // MockRenderer is a mock implementation of the Renderer interface.
@@ -28,12 +36,22 @@ type MockRenderer struct {
 
 func (m *MockRenderer) Render(ctx context.Context, rawURL string) (Page, error) {
 	args := m.Called(ctx, rawURL)
-	return args.Get(0).(Page), args.Error(1)
+	page, ok := args.Get(0).(Page)
+	if !ok {
+		return Page{}, fmt.Errorf("mock render: missing page return")
+	}
+	if err := args.Error(1); err != nil {
+		return page, fmt.Errorf("mock render: %w", err)
+	}
+	return page, nil
 }
 
 func (m *MockRenderer) Close(ctx context.Context) error {
 	args := m.Called(ctx)
-	return args.Error(0)
+	if err := args.Error(0); err != nil {
+		return fmt.Errorf("mock renderer close: %w", err)
+	}
+	return nil
 }
 
 // MockDetector is a mock implementation of the Detector interface.
@@ -68,7 +86,10 @@ func (m *MockRetryPolicy) ShouldRetry(err error, attempt int) bool {
 
 func (m *MockRetryPolicy) Backoff(attempt int) time.Duration {
 	args := m.Called(attempt)
-	return args.Get(0).(time.Duration)
+	if val, ok := args.Get(0).(time.Duration); ok {
+		return val
+	}
+	return 0
 }
 
 // MockStorageSink is a mock implementation of the StorageSink interface.
@@ -78,12 +99,19 @@ type MockStorageSink struct {
 
 func (m *MockStorageSink) SaveHTML(ctx context.Context, page Page) (string, error) {
 	args := m.Called(ctx, page)
-	return args.String(0), args.Error(1)
+	path := args.String(0)
+	if err := args.Error(1); err != nil {
+		return "", fmt.Errorf("mock SaveHTML: %w", err)
+	}
+	return path, nil
 }
 
 func (m *MockStorageSink) SaveMeta(ctx context.Context, meta CrawlMetadata) error {
 	args := m.Called(ctx, meta)
-	return args.Error(0)
+	if err := args.Error(0); err != nil {
+		return fmt.Errorf("mock SaveMeta: %w", err)
+	}
+	return nil
 }
 
 func TestEngine_Run(t *testing.T) {
@@ -239,7 +267,12 @@ func Test_extractLinks(t *testing.T) {
 	t.Run("absolute links", func(t *testing.T) {
 		page := Page{
 			FinalURL: "http://example.com",
-			Body:     []byte("<html><body><a href=\"http://example.com/page2\">Page 2</a><a href=\"http://another.com/page3\">Page 3</a></body></html>"),
+			Body: []byte(
+				"<html><body>" +
+					`<a href="http://example.com/page2">Page 2</a>` +
+					`<a href="http://another.com/page3">Page 3</a>` +
+					"</body></html>",
+			),
 		}
 		links := extractLinks(page)
 		require.ElementsMatch(t, []string{"http://example.com/page2", "http://another.com/page3"}, links)
@@ -248,7 +281,12 @@ func Test_extractLinks(t *testing.T) {
 	t.Run("relative links", func(t *testing.T) {
 		page := Page{
 			FinalURL: "http://example.com/path/",
-			Body:     []byte("<html><body><a href=\"/page2\">Page 2</a><a href=\"page3\">Page 3</a></body></html>"),
+			Body: []byte(
+				"<html><body>" +
+					`<a href="/page2">Page 2</a>` +
+					`<a href="page3">Page 3</a>` +
+					"</body></html>",
+			),
 		}
 		links := extractLinks(page)
 		require.ElementsMatch(t, []string{"http://example.com/page2", "http://example.com/path/page3"}, links)
@@ -257,7 +295,12 @@ func Test_extractLinks(t *testing.T) {
 	t.Run("mixed links", func(t *testing.T) {
 		page := Page{
 			FinalURL: "http://example.com",
-			Body:     []byte("<html><body><a href=\"http://example.com/page2\">Page 2</a><a href=\"/page3\">Page 3</a></body></html>"),
+			Body: []byte(
+				"<html><body>" +
+					`<a href="http://example.com/page2">Page 2</a>` +
+					`<a href="/page3">Page 3</a>` +
+					"</body></html>",
+			),
 		}
 		links := extractLinks(page)
 		require.ElementsMatch(t, []string{"http://example.com/page2", "http://example.com/page3"}, links)
