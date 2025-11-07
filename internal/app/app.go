@@ -4,11 +4,13 @@ package app
 import (
 	"context"
 	"fmt"
+	"net/http"
 
 	"github.com/JakeFAU/realtime-cpi/webcrawler/internal/database"
 	"github.com/JakeFAU/realtime-cpi/webcrawler/internal/logging"
 	"github.com/JakeFAU/realtime-cpi/webcrawler/internal/queue"
 	"github.com/JakeFAU/realtime-cpi/webcrawler/internal/storage"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
@@ -122,6 +124,15 @@ func NewApp(ctx context.Context) (*App, error) {
 	}
 
 	l.Info("Application services initialized successfully.")
+
+	go func() {
+		http.Handle("/metrics", promhttp.Handler())
+		l.Info("Starting metrics server on :8080")
+		if err := http.ListenAndServe(":8080", nil); err != nil {
+			l.Error("Metrics server failed", zap.Error(err))
+		}
+	}()
+
 	return &App{
 		logger:   l,
 		storage:  store,

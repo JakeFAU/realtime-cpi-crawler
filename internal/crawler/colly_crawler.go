@@ -113,6 +113,7 @@ func (c *collyCrawler) initCollector(ctx context.Context) *colly.Collector {
 	}
 
 	collector.OnRequest(func(r *colly.Request) {
+		TotalRequests.Inc()
 		c.logger.Debug("Dispatching request", zap.String("url", r.URL.String()))
 	})
 	collector.OnHTML("a[href]", c.handleHTML)
@@ -150,6 +151,7 @@ func (c *collyCrawler) handleResponse(ctx context.Context) func(*colly.Response)
 
 func (c *collyCrawler) handleError(ctx context.Context) func(*colly.Response, error) {
 	return func(r *colly.Response, err error) {
+		TotalRequestErrors.Inc()
 		if r == nil || r.Request == nil || r.Request.URL == nil {
 			c.logger.Error("Request failed before response was received", zap.Error(err))
 			return
@@ -166,9 +168,11 @@ func (c *collyCrawler) handleError(ctx context.Context) func(*colly.Response, er
 
 		switch r.StatusCode {
 		case http.StatusTooManyRequests:
+			TotalRateLimitHits.Inc()
 			c.logger.Warn("Rate limited; backing off before retrying", fields...)
 			c.pauser.Pause(ctx, c.config.RateLimitBackoff)
 		case http.StatusForbidden:
+			TotalForbiddenHits.Inc()
 			host := r.Request.URL.Host
 			blocked := c.domains.MarkForbidden(host)
 			fields = append(fields, zap.String("domain", host), zap.Bool("domain_blocked", blocked))
@@ -287,6 +291,7 @@ func (c *collyCrawler) persistResponse(ctx context.Context, r *colly.Response, u
 		zap.String("blob_link", objectName),
 		zap.String("blob_hash", blobHash),
 	)
+	TotalScrapes.Inc()
 	return nil
 }
 
