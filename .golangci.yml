@@ -106,6 +106,8 @@ linters:
             - github.com/jmoiron/sqlx
             - github.com/lib/pq
             - github.com/gocolly/colly/v2
+            - github.com/stretchr/testify/mock
+            - github.com/stretchr/testify/require
           # Deny specific problematic packages
           deny:
             - pkg: "math/rand$"

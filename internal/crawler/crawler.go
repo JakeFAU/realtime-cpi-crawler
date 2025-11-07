@@ -4,6 +4,7 @@ package crawler
 
 import (
 	"context"
+	"regexp"
 	"time"
 )
 
@@ -17,6 +18,7 @@ type Config struct {
 	MaxDepth          int
 	InitialTargetURLs []string
 	Concurrency       int
+	URLFilters        []*regexp.Regexp
 }
 
 // Crawler defines the interface for a web crawler.
