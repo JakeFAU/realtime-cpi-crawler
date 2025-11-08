@@ -1,22 +1,50 @@
-# Example config file (config.yaml)
-# Place this in the same directory as your executable.
-
 crawler:
-  useragent: "My-Custom-Crawler/1.0 (RealtimeCPI)"
+  user_agent: "RealtimeCPI-WebCrawler/1.0 (+https://github.com/JakeFAU)"
+  respect_robots: true
   blocked_domains:
     - "*.ru"
-    - "google.com"
+  # Optional: test with allowlist to keep runs deterministic
+  # allowed_domains: ["httpbin.org"]
   max_depth: 2
-  concurrency: 5 # Overrides the default 10
-  delay_seconds: 1
-  ignore_robots: false
-  rate_limit_backoff_seconds: 5
+  concurrency: 5
+  # Prefer per-domain QPS to a global delay
+  per_domain_qps: 1.0
+  # Fallback global delay only if you must
+  delay_seconds: 0
   max_forbidden_responses: 3
-  target_urls:
-    - "https://httpbin.org/status/200"
-    - "https://httpbin.org/status/404"
-    - "https://httpbin.org/delay/3" # This will test the timeout
-    - "https://httpbin.org/user-agent" # This will show our custom user agent
+  # JS rendering off for this basic test; add a second config to test it
+  feature_render_enabled: false
+  escalate_only_same_host: true
 
 http:
-  timeout_seconds: 2 # A low timeout to test the 'delay/3' URL
+  timeout_seconds: 2
+  retry:
+    enable: true
+    max_attempts: 3
+    backoff: exponential
+    base_ms: 250
+    max_ms: 2000
+    jitter: true
+
+detector:
+  min_html_bytes: 2000
+  selector_must: ".main,.content,.app"
+  keywords:
+    ["__NEXT_DATA__", "data-reactroot", "ng-app", "window.__APOLLO_STATE__"]
+
+render:
+  js_render_timeout: "15s"
+  js_render_max_concurrency: 2
+  js_render_domain_qps: 0.5
+
+io:
+  output_dir: "./out/test"
+  max_page_bytes: 5242880 # 5 MB
+  log_level: "debug"
+
+targets:
+  urls:
+    - "https://httpbin.org/status/200"
+    - "https://httpbin.org/status/404"
+    - "https://httpbin.org/delay/3" # should hit timeout
+    - "https://httpbin.org/user-agent" # verify UA
