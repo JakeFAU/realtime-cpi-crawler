@@ -23,29 +23,25 @@ auth:
   api_key: secret
 crawler:
   concurrency: 6
-  per_domain_max: 3
   user_agent: real-agent
-  delay_seconds: 2
   ignore_robots: true
   max_depth_default: 5
   max_pages_default: 50
   queue_depth: 128
 http:
   timeout_seconds: 45
-  max_retries: 4
-  backoff_initial_ms: 100
-  backoff_max_ms: 500
 headless:
   enabled: true
   max_parallel: 2
   nav_timeout_seconds: 30
   promotion_threshold: 70
 storage:
-  gcs_bucket: bucket
   prefix: logs
   content_type: text/plain
 logging:
   development: false
+pubsub:
+  topic_name: topic
 standard_jobs:
   price-refresh:
     urls: ["https://example.com"]
@@ -87,9 +83,14 @@ func TestConfigValidateErrors(t *testing.T) {
 	t.Parallel()
 
 	base := Config{
-		Server:  ServerConfig{Port: 8080},
-		Crawler: CrawlerConfig{Concurrency: 1},
-		HTTP:    HTTPConfig{TimeoutSeconds: 10},
+		Server: ServerConfig{Port: 8080},
+		Crawler: CrawlerConfig{
+			Concurrency:      1,
+			MaxDepthDefault:  1,
+			MaxPagesDefault:  10,
+			GlobalQueueDepth: 10,
+		},
+		HTTP: HTTPConfig{TimeoutSeconds: 10},
 	}
 
 	tests := []struct {
@@ -114,6 +115,33 @@ func TestConfigValidateErrors(t *testing.T) {
 				return c
 			}(),
 			want: "crawler.concurrency",
+		},
+		{
+			name: "invalid queue depth",
+			cfg: func() Config {
+				c := base
+				c.Crawler.GlobalQueueDepth = 0
+				return c
+			}(),
+			want: "crawler.queue_depth",
+		},
+		{
+			name: "invalid max pages default",
+			cfg: func() Config {
+				c := base
+				c.Crawler.MaxPagesDefault = 0
+				return c
+			}(),
+			want: "crawler.max_pages_default",
+		},
+		{
+			name: "invalid max depth default",
+			cfg: func() Config {
+				c := base
+				c.Crawler.MaxDepthDefault = -1
+				return c
+			}(),
+			want: "crawler.max_depth_default",
 		},
 		{
 			name: "invalid timeout",

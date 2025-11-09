@@ -43,3 +43,4 @@ go.work.sum
 instructions.txt
 coverage_report.out
 /.cache
+coverage.out

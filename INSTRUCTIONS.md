@@ -44,24 +44,27 @@ Requests must include `X-API-Key` header or `?api_key=` query parameter when ena
 ```yaml
 crawler:
   concurrency: 4
-  per_domain_max: 2
   user_agent: "real-cpi-bot/0.1"
-  delay_seconds: 1
   ignore_robots: false
   max_depth_default: 1
   max_pages_default: 10
   queue_depth: 64
 ```
 
+- `concurrency` controls how many workers are spawned.
+- `ignore_robots` flips the default for custom job requests (clients can override).
+- `max_depth_default` / `max_pages_default` seed job parameters when omitted.
+- `queue_depth` bounds the in-memory queue; use it to apply backpressure.
+- `user_agent` is propagated to both Colly and headless fetchers.
+
 ### 2.4 HTTP / Retry
 
 ```yaml
 http:
   timeout_seconds: 15
-  max_retries: 2
-  backoff_initial_ms: 250
-  backoff_max_ms: 2000
 ```
+
+- `timeout_seconds` doubles as the default crawl budget per job and the Colly request timeout.
 
 ### 2.5 Headless
 
@@ -70,21 +73,25 @@ headless:
   enabled: true
   max_parallel: 2
   nav_timeout_seconds: 30
-  promotion_threshold: 60
+  promotion_threshold: 2048
 ```
+
+- `promotion_threshold` is the minimum HTML byte length the detector expects before considering a page “complete”; smaller documents with high script density are promoted to headless.
 
 ### 2.6 Storage & Pub/Sub
 
 ```yaml
 storage:
-  gcs_bucket: ""          # future use
   prefix: "pages"
   content_type: "text/html; charset=utf-8"
 
 pubsub:
-  project_id: ""          # future use
   topic_name: ""
 ```
+
+- `storage.prefix` scopes blob paths (`<prefix>/<job>/<hash>.html`); leave blank to write at the root.
+- `storage.content_type` is stored alongside each blob for downstream consumers.
+- `pubsub.topic_name` enables publish-on-completion; leave empty to disable publishing.
 
 ### 2.7 Logging
 

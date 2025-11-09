@@ -66,10 +66,12 @@ Custom job request example:
 Configuration is merged from `config.yaml` and `CRAWLER_*` environment variables. Key sections:
 
 - `server.port` – HTTP listen port.
-- `crawler.concurrency`, `crawler.per_domain_max`, `crawler.user_agent`.
-- `headless.enabled`, `headless.max_parallel`, `headless.nav_timeout_seconds`.
+- `auth.enabled`/`auth.api_key` – toggle API key middleware.
+- `crawler.concurrency`, `crawler.queue_depth`, `crawler.user_agent`, `crawler.max_depth_default`, `crawler.max_pages_default`.
+- `http.timeout_seconds` – per-page probe budget (also used as default job budget).
+- `headless.enabled`, `headless.max_parallel`, `headless.nav_timeout_seconds`, `headless.promotion_threshold`.
 - `storage.prefix`, `storage.content_type`.
-- `pubsub.project_id`, `pubsub.topic_name`.
+- `pubsub.topic_name`.
 - `logging.development` – toggles zap dev vs prod logger.
 - `standard_jobs.<name>` – canned job parameter templates.
 
