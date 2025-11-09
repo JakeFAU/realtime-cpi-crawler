@@ -18,6 +18,7 @@ import (
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/config"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/crawler"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/dispatcher"
+	"github.com/JakeFAU/realtime-cpi-crawler/internal/metrics"
 )
 
 // Server wires HTTP handlers to the dispatcher and stores.
@@ -29,11 +30,8 @@ type Server struct {
 	clock      crawler.Clock
 	cfg        config.Config
 	logger     *zap.Logger
+	metrics    *metrics.Collectors
 }
-
-const metricsPayload = "# HELP webcrawler_build_info Build info\n" +
-	"# TYPE webcrawler_build_info gauge\n" +
-	"webcrawler_build_info 1\n"
 
 // NewServer constructs a Server with middleware and routes.
 func NewServer(
@@ -42,6 +40,7 @@ func NewServer(
 	idGen crawler.IDGenerator,
 	clock crawler.Clock,
 	cfg config.Config,
+	meters *metrics.Collectors,
 	logger *zap.Logger,
 ) *Server {
 	s := &Server{
@@ -50,6 +49,7 @@ func NewServer(
 		idGen:      idGen,
 		clock:      clock,
 		cfg:        cfg,
+		metrics:    meters,
 		logger:     logger,
 	}
 	r := chi.NewRouter()
@@ -63,7 +63,7 @@ func NewServer(
 
 	r.Get("/healthz", s.healthz)
 	r.Get("/readyz", s.readyz)
-	r.Get("/metrics", s.metrics)
+	r.Get("/metrics", s.serveMetrics)
 
 	r.Route("/v1", func(r chi.Router) {
 		r.Route("/jobs", func(r chi.Router) {
@@ -95,12 +95,12 @@ func (s *Server) readyz(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }
 
-func (s *Server) metrics(w http.ResponseWriter, _ *http.Request) {
-	// Placeholder metrics endpoint; wire Prometheus registry in future.
-	w.Header().Set("Content-Type", "text/plain")
-	if _, err := w.Write([]byte(metricsPayload)); err != nil {
-		s.logger.Error("metrics write failed", zap.Error(err))
+func (s *Server) serveMetrics(w http.ResponseWriter, r *http.Request) {
+	if s.metrics == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
 	}
+	s.metrics.Handler().ServeHTTP(w, r)
 }
 
 func (s *Server) submitCustomJob(w http.ResponseWriter, r *http.Request) {
@@ -124,6 +124,9 @@ func (s *Server) submitCustomJob(w http.ResponseWriter, r *http.Request) {
 		writeError(w, status, err.Error())
 		return
 	}
+	if s.metrics != nil {
+		s.metrics.JobSubmitted("custom")
+	}
 	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": jobID})
 }
 
@@ -144,6 +147,9 @@ func (s *Server) submitStandardJob(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if s.metrics != nil {
+		s.metrics.JobSubmitted("standard")
 	}
 	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": jobID})
 }
@@ -353,9 +359,13 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 		start := time.Now()
 		ww := &responseWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(ww, r)
+		route := routeLabel(r)
+		if s.metrics != nil {
+			s.metrics.ObserveHTTPRequest(r.Method, route, ww.status, time.Since(start))
+		}
 		s.logger.Info("request completed",
 			zap.String("method", r.Method),
-			zap.String("path", r.URL.Path),
+			zap.String("path", route),
 			zap.Int("status", ww.status),
 			zap.Duration("duration", time.Since(start)),
 			zap.String("request_id", requestIDFromContext(r.Context())),
@@ -451,4 +461,13 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 
 func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+func routeLabel(r *http.Request) string {
+	if ctx := chi.RouteContext(r.Context()); ctx != nil {
+		if route := ctx.RoutePattern(); route != "" {
+			return route
+		}
+	}
+	return r.URL.Path
 }

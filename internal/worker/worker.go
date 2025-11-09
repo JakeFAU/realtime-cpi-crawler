@@ -10,6 +10,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/crawler"
+	"github.com/JakeFAU/realtime-cpi-crawler/internal/metrics"
 )
 
 // Config controls Worker behavior.
@@ -33,6 +34,7 @@ type Worker struct {
 	policy          crawler.Policy
 	cfg             Config
 	logger          *zap.Logger
+	meters          *metrics.Collectors
 }
 
 // New constructs a Worker.
@@ -49,6 +51,7 @@ func New(
 	policy crawler.Policy,
 	cfg Config,
 	logger *zap.Logger,
+	meters *metrics.Collectors,
 ) *Worker {
 	if cfg.ContentType == "" {
 		cfg.ContentType = "text/html; charset=utf-8"
@@ -66,6 +69,7 @@ func New(
 		policy:          policy,
 		cfg:             cfg,
 		logger:          logger,
+		meters:          meters,
 	}
 }
 
@@ -86,6 +90,7 @@ func (w *Worker) Run(ctx context.Context) {
 }
 
 func (w *Worker) processJob(ctx context.Context, item crawler.QueueItem) {
+	start := time.Now()
 	if w.probeFetcher == nil {
 		w.logger.Error("no probe fetcher configured", zap.String("job_id", item.JobID))
 		if err := w.jobStore.UpdateJobStatus(
@@ -119,6 +124,7 @@ func (w *Worker) processJob(ctx context.Context, item crawler.QueueItem) {
 	if err := w.jobStore.UpdateJobStatus(ctx, item.JobID, status, errText, counters); err != nil {
 		w.logger.Error("final job status update failed", zap.String("job_id", item.JobID), zap.Error(err))
 	}
+	w.recordJobFinish(status, start)
 }
 
 func (w *Worker) allowFetch(jobID, url string, depth int) bool {
@@ -171,11 +177,13 @@ func (w *Worker) handleURL(
 	if err := w.persistAndPublish(ctx, item.JobID, url, finalResp); err != nil {
 		counters.PagesFailed++
 		w.logger.Error("persist page failed", zap.String("job_id", item.JobID), zap.String("url", url), zap.Error(err))
+		w.recordPage(false, finalResp.UsedHeadless, finalResp.StatusCode, finalResp.Duration)
 		return err
 	}
 
 	counters.PagesSucceeded++
 	w.logger.Debug("page processed", zap.String("job_id", item.JobID), zap.String("url", url))
+	w.recordPage(true, finalResp.UsedHeadless, finalResp.StatusCode, finalResp.Duration)
 	return nil
 }
 
@@ -191,6 +199,7 @@ func (w *Worker) fetchProbe(ctx context.Context, item crawler.QueueItem, url str
 		RespectRobotsProvided: item.Params.RespectRobotsProvided,
 	})
 	if err != nil {
+		w.recordPage(false, false, 0, 0)
 		return crawler.FetchResponse{}, fmt.Errorf("probe fetch: %w", err)
 	}
 	return resp, nil
@@ -311,4 +320,18 @@ func (w *Worker) deriveFinalStatus(
 	default:
 		return crawler.JobStatusSucceeded, errText
 	}
+}
+
+func (w *Worker) recordPage(success, usedHeadless bool, status int, duration time.Duration) {
+	if w.meters == nil {
+		return
+	}
+	w.meters.PageProcessed(success, usedHeadless, status, duration)
+}
+
+func (w *Worker) recordJobFinish(status crawler.JobStatus, start time.Time) {
+	if w.meters == nil {
+		return
+	}
+	w.meters.JobFinished(status, time.Since(start))
 }

@@ -25,6 +25,7 @@ import (
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/headless/detector"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/id/uuid"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/logging"
+	"github.com/JakeFAU/realtime-cpi-crawler/internal/metrics"
 	memorypublisher "github.com/JakeFAU/realtime-cpi-crawler/internal/publisher/memory"
 	queueMemory "github.com/JakeFAU/realtime-cpi-crawler/internal/queue/memory"
 	memoryStorage "github.com/JakeFAU/realtime-cpi-crawler/internal/storage/memory"
@@ -58,7 +59,8 @@ func main() {
 	jobStore := memoryStorage.NewJobStore()
 	blobStore := memoryStorage.NewBlobStore()
 	publisher := memorypublisher.New()
-	queue := queueMemory.NewQueue(cfg.Crawler.GlobalQueueDepth)
+	meters := metrics.New()
+	queue := queueMemory.NewQueue(cfg.Crawler.GlobalQueueDepth).WithMetrics(meters)
 	hasher := sha256.New()
 	clock := system.New()
 	idGen := uuid.New()
@@ -103,11 +105,12 @@ func main() {
 			nil,
 			workerCfg,
 			logger.Named("worker").With(zap.Int("index", i)),
+			meters,
 		))
 	}
 	dispatch := dispatcher.New(queue, workers)
 
-	apiServer := api.NewServer(jobStore, dispatch, idGen, clock, cfg, logger.Named("api"))
+	apiServer := api.NewServer(jobStore, dispatch, idGen, clock, cfg, meters, logger.Named("api"))
 
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Server.Port),

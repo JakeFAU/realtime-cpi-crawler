@@ -64,6 +64,7 @@ func TestWorker_ProcessJob_SuccessFlow(t *testing.T) {
 			Topic:       "jobs",
 		},
 		zap.NewNop(),
+		nil,
 	)
 
 	go w.Run(ctx)
@@ -127,6 +128,7 @@ func TestWorker_ProcessJob_PublishFailureMarksJobFailed(t *testing.T) {
 			Topic:       "jobs",
 		},
 		zap.NewNop(),
+		nil,
 	)
 
 	go w.Run(ctx)
@@ -200,6 +202,7 @@ func TestWorker_ProcessJob_HeadlessPromotionApplied(t *testing.T) {
 			Topic:       "jobs",
 		},
 		zap.NewNop(),
+		nil,
 	)
 
 	go w.Run(ctx)
@@ -292,7 +295,7 @@ func (f *fakeJobStore) RecordPage(_ context.Context, page crawler.PageRecord) er
 func TestWorkerBuildBlobPath(t *testing.T) {
 	t.Parallel()
 
-	w := New(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, Config{BlobPrefix: "/pages/"}, zap.NewNop())
+	w := New(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, Config{BlobPrefix: "/pages/"}, zap.NewNop(), nil)
 	if got := w.buildBlobPath("job", "hash"); got != "pages/job/hash.html" {
 		t.Fatalf("unexpected blob path: %s", got)
 	}
@@ -306,7 +309,7 @@ func TestWorkerBuildBlobPath(t *testing.T) {
 func TestWorkerAllowHelpers(t *testing.T) {
 	t.Parallel()
 
-	w := New(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, Config{}, zap.NewNop())
+	w := New(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, Config{}, zap.NewNop(), nil)
 	if !w.allowFetch("job", "url", 0) || !w.allowHeadless("job", "url", 0) {
 		t.Fatal("expected allows with nil policy")
 	}

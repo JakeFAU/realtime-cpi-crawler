@@ -11,7 +11,7 @@ This service accepts crawl jobs over HTTP, executes them asynchronously with Col
 - **Fetcher Pipeline:** fast Colly probe with optional chromedp headless promotion based on heuristics; robots adherence and retries configurable via Viper.
 - **Persistence:** raw HTML stored via blob interface; job/page metadata captured in JobStore for status/result queries.
 - **Pub/Sub Notification:** publishes job updates (UUID, URL, blob URI, hash, status) for downstream consumers.
-- **Observability:** structured logging via zap, middleware request logs, and placeholder metrics endpoint (Prometheus-ready).
+- **Observability:** structured logging via zap, middleware request logs, and exported Prometheus metrics for jobs/pages/HTTP.
 - **Configuration:** `config.yaml` + environment variables loaded/validated with Viper; logging toggles for dev/prod.
 
 ---
@@ -42,7 +42,7 @@ go run ./cmd/webcrawler --config config.yaml
 | GET    | `/v1/jobs/{job_id}/result`  | Fetch page-level metadata (URLs, hashes, headless flag, blob URIs).  |
 | POST   | `/v1/jobs/{job_id}/cancel`  | Attempt to cancel an in-flight job.                                  |
 | GET    | `/healthz`, `/readyz`       | Liveness/readiness checks.                                           |
-| GET    | `/metrics`                  | Prometheus-style stub metrics endpoint.                              |
+| GET    | `/metrics`                  | Prometheus metrics (HTTP, queue depth, job/page counters).           |
 
 Custom job request example:
 

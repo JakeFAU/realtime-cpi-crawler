@@ -32,6 +32,7 @@ func TestDispatcherRunStartsWorkers(t *testing.T) {
 		nil,
 		worker.Config{},
 		zap.NewNop(),
+		nil,
 	)
 	dispatch := New(queue, []*worker.Worker{w})
 
