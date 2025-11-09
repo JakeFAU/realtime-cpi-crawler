@@ -6,12 +6,13 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"go.uber.org/zap"
 
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/api"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/clock/system"
@@ -23,6 +24,7 @@ import (
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/hash/sha256"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/headless/detector"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/id/uuid"
+	"github.com/JakeFAU/realtime-cpi-crawler/internal/logging"
 	memorypublisher "github.com/JakeFAU/realtime-cpi-crawler/internal/publisher/memory"
 	queueMemory "github.com/JakeFAU/realtime-cpi-crawler/internal/queue/memory"
 	memoryStorage "github.com/JakeFAU/realtime-cpi-crawler/internal/storage/memory"
@@ -33,15 +35,25 @@ func main() {
 	cfgPath := flag.String("config", "", "Path to config file")
 	flag.Parse()
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
-		logger.Error("load config failed", "error", err)
-		return
+		fmt.Fprintf(os.Stderr, "load config failed: %v\n", err)
+		os.Exit(1)
 	}
+	logger, err := logging.New(cfg.Logging.Development)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "logger init failed: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if syncErr := logger.Sync(); syncErr != nil {
+			fmt.Fprintf(os.Stderr, "logger sync failed: %v\n", syncErr)
+		}
+	}()
+	zap.ReplaceGlobals(logger)
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	jobStore := memoryStorage.NewJobStore()
 	blobStore := memoryStorage.NewBlobStore()
@@ -64,7 +76,7 @@ func main() {
 			NavigationTimeout: time.Duration(cfg.Headless.NavTimeoutSec) * time.Second,
 		})
 		if err != nil {
-			logger.Error("headless fetcher init failed", "error", err)
+			logger.Warn("headless fetcher init failed", zap.Error(err))
 		} else {
 			headless = headlessFetcher
 		}
@@ -78,27 +90,24 @@ func main() {
 
 	var workers []*worker.Worker
 	for i := 0; i < cfg.Crawler.Concurrency; i++ {
-		workers = append(
-			workers,
-			worker.New(
-				queue,
-				jobStore,
-				blobStore,
-				publisher,
-				hasher,
-				clock,
-				probeFetcher,
-				headless,
-				detect,
-				nil,
-				workerCfg,
-				logger,
-			),
-		)
+		workers = append(workers, worker.New(
+			queue,
+			jobStore,
+			blobStore,
+			publisher,
+			hasher,
+			clock,
+			probeFetcher,
+			headless,
+			detect,
+			nil,
+			workerCfg,
+			logger.Named("worker").With(zap.Int("index", i)),
+		))
 	}
 	dispatch := dispatcher.New(queue, workers)
 
-	apiServer := api.NewServer(jobStore, dispatch, idGen, clock, cfg)
+	apiServer := api.NewServer(jobStore, dispatch, idGen, clock, cfg, logger.Named("api"))
 
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Server.Port),
@@ -112,9 +121,9 @@ func main() {
 	}()
 
 	go func() {
-		logger.Info("http server started", "port", cfg.Server.Port)
+		logger.Info("http server started", zap.Int("port", cfg.Server.Port))
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Error("http server error", "error", err)
+			logger.Error("http server error", zap.Error(err))
 			stop()
 		}
 	}()
@@ -125,7 +134,7 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		logger.Error("server shutdown error", "error", err)
+		logger.Error("server shutdown error", zap.Error(err))
 	}
 	queue.Close()
 	logger.Info("shutdown complete")
