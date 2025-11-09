@@ -21,10 +21,7 @@ type Config struct {
 	Storage      StorageConfig                    `mapstructure:"storage"`
 	DB           DBConfig                         `mapstructure:"db"`
 	PubSub       PubSubConfig                     `mapstructure:"pubsub"`
-<<<<<<< HEAD
 	Logging      LoggingConfig                    `mapstructure:"logging"`
-=======
->>>>>>> b22344a4 (refactor to server)
 	StandardJobs map[string]crawler.JobParameters `mapstructure:"standard_jobs"`
 }
 
@@ -87,14 +84,11 @@ type PubSubConfig struct {
 	TopicName string `mapstructure:"topic_name"`
 }
 
-<<<<<<< HEAD
 // LoggingConfig toggles zap development features.
 type LoggingConfig struct {
 	Development bool `mapstructure:"development"`
 }
 
-=======
->>>>>>> b22344a4 (refactor to server)
 // Load builds a Config from disk/environment.
 func Load(path string) (Config, error) {
 	v := viper.New()
@@ -143,10 +137,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("headless.promotion_threshold", 60)
 	v.SetDefault("storage.prefix", "pages")
 	v.SetDefault("storage.content_type", "text/html; charset=utf-8")
-<<<<<<< HEAD
 	v.SetDefault("logging.development", true)
-=======
->>>>>>> b22344a4 (refactor to server)
 }
 
 // Validate enforces required values and reasonable limits.

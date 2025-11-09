@@ -4,18 +4,11 @@ package worker
 import (
 	"context"
 	"fmt"
-<<<<<<< HEAD
 	"strings"
 	"time"
 
 	"go.uber.org/zap"
 
-=======
-	"log/slog"
-	"strings"
-	"time"
-
->>>>>>> b22344a4 (refactor to server)
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/crawler"
 )
 
@@ -39,11 +32,7 @@ type Worker struct {
 	detector        crawler.HeadlessDetector
 	policy          crawler.Policy
 	cfg             Config
-<<<<<<< HEAD
 	logger          *zap.Logger
-=======
-	logger          *slog.Logger
->>>>>>> b22344a4 (refactor to server)
 }
 
 // New constructs a Worker.
@@ -59,16 +48,8 @@ func New(
 	detector crawler.HeadlessDetector,
 	policy crawler.Policy,
 	cfg Config,
-<<<<<<< HEAD
 	logger *zap.Logger,
 ) *Worker {
-=======
-	logger *slog.Logger,
-) *Worker {
-	if logger == nil {
-		logger = slog.Default()
-	}
->>>>>>> b22344a4 (refactor to server)
 	if cfg.ContentType == "" {
 		cfg.ContentType = "text/html; charset=utf-8"
 	}
@@ -96,27 +77,17 @@ func (w *Worker) Run(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
-<<<<<<< HEAD
 			w.logger.Error("queue dequeue failed", zap.Error(err))
 			continue
 		}
 		w.logger.Debug("dequeued job", zap.String("job_id", item.JobID))
-=======
-			w.logger.Error("dequeue failed", "error", err)
-			continue
-		}
->>>>>>> b22344a4 (refactor to server)
 		w.processJob(ctx, item)
 	}
 }
 
 func (w *Worker) processJob(ctx context.Context, item crawler.QueueItem) {
 	if w.probeFetcher == nil {
-<<<<<<< HEAD
 		w.logger.Error("no probe fetcher configured", zap.String("job_id", item.JobID))
-=======
-		w.logger.Error("no probe fetcher configured", "job_id", item.JobID)
->>>>>>> b22344a4 (refactor to server)
 		if err := w.jobStore.UpdateJobStatus(
 			ctx,
 			item.JobID,
@@ -124,11 +95,7 @@ func (w *Worker) processJob(ctx context.Context, item crawler.QueueItem) {
 			"no probe fetcher configured",
 			crawler.JobCounters{},
 		); err != nil {
-<<<<<<< HEAD
 			w.logger.Error("fail job status update", zap.String("job_id", item.JobID), zap.Error(err))
-=======
-			w.logger.Error("fail job status update", "job_id", item.JobID, "error", err)
->>>>>>> b22344a4 (refactor to server)
 		}
 		return
 	}
@@ -137,11 +104,7 @@ func (w *Worker) processJob(ctx context.Context, item crawler.QueueItem) {
 	errText := ""
 
 	if err := w.jobStore.UpdateJobStatus(ctx, item.JobID, status, errText, counters); err != nil {
-<<<<<<< HEAD
 		w.logger.Error("update job status failed", zap.String("job_id", item.JobID), zap.Error(err))
-=======
-		w.logger.Error("update job status", "job_id", item.JobID, "error", err)
->>>>>>> b22344a4 (refactor to server)
 		return
 	}
 
@@ -154,11 +117,7 @@ func (w *Worker) processJob(ctx context.Context, item crawler.QueueItem) {
 	status, errText = w.deriveFinalStatus(ctx, counters, errText)
 
 	if err := w.jobStore.UpdateJobStatus(ctx, item.JobID, status, errText, counters); err != nil {
-<<<<<<< HEAD
 		w.logger.Error("final job status update failed", zap.String("job_id", item.JobID), zap.Error(err))
-=======
-		w.logger.Error("final job status update failed", "job_id", item.JobID, "error", err)
->>>>>>> b22344a4 (refactor to server)
 	}
 }
 
@@ -191,52 +150,32 @@ func (w *Worker) handleURL(
 	counters *crawler.JobCounters,
 ) error {
 	if !w.allowFetch(item.JobID, url, 0) {
-<<<<<<< HEAD
 		w.logger.Warn("fetch blocked by policy", zap.String("job_id", item.JobID), zap.String("url", url))
-=======
-		w.logger.Warn("fetch blocked by policy", "job_id", item.JobID, "url", url)
->>>>>>> b22344a4 (refactor to server)
 		return nil
 	}
 
 	resp, err := w.fetchProbe(ctx, item, url)
 	if err != nil {
 		counters.PagesFailed++
-<<<<<<< HEAD
 		w.logger.Error("probe fetch failed", zap.String("job_id", item.JobID), zap.String("url", url), zap.Error(err))
 		return err
 	}
 	w.logger.Debug("probe fetch succeeded", zap.String("job_id", item.JobID), zap.String("url", url))
-=======
-		w.logger.Error("probe fetch failed", "job_id", item.JobID, "url", url, "error", err)
-		return err
-	}
->>>>>>> b22344a4 (refactor to server)
 
 	finalResp := resp
 	if promotedResp, promoted := w.maybePromote(ctx, item, url, resp); promoted {
 		finalResp = promotedResp
-<<<<<<< HEAD
 		w.logger.Info("headless promotion applied", zap.String("job_id", item.JobID), zap.String("url", url))
-=======
->>>>>>> b22344a4 (refactor to server)
 	}
 
 	if err := w.persistAndPublish(ctx, item.JobID, url, finalResp); err != nil {
 		counters.PagesFailed++
-<<<<<<< HEAD
 		w.logger.Error("persist page failed", zap.String("job_id", item.JobID), zap.String("url", url), zap.Error(err))
-=======
-		w.logger.Error("persist page failed", "job_id", item.JobID, "url", url, "error", err)
->>>>>>> b22344a4 (refactor to server)
 		return err
 	}
 
 	counters.PagesSucceeded++
-<<<<<<< HEAD
 	w.logger.Debug("page processed", zap.String("job_id", item.JobID), zap.String("url", url))
-=======
->>>>>>> b22344a4 (refactor to server)
 	return nil
 }
 
@@ -282,11 +221,7 @@ func (w *Worker) maybePromote(
 		RespectRobotsProvided: item.Params.RespectRobotsProvided,
 	})
 	if err != nil {
-<<<<<<< HEAD
 		w.logger.Warn("headless promotion failed", zap.String("job_id", item.JobID), zap.String("url", url), zap.Error(err))
-=======
-		w.logger.Warn("headless promotion failed", "job_id", item.JobID, "url", url, "error", err)
->>>>>>> b22344a4 (refactor to server)
 		return resp, false
 	}
 	headlessResp.UsedHeadless = true
@@ -349,7 +284,6 @@ func (w *Worker) publishResult(
 	if _, err := w.publisher.Publish(ctx, w.cfg.Topic, payload); err != nil {
 		return fmt.Errorf("publish payload: %w", err)
 	}
-<<<<<<< HEAD
 	w.logger.Info("page published",
 		zap.String("job_id", jobID),
 		zap.String("url", url),
@@ -357,8 +291,6 @@ func (w *Worker) publishResult(
 		zap.String("hash", hash),
 		zap.Bool("headless", resp.UsedHeadless),
 	)
-=======
->>>>>>> b22344a4 (refactor to server)
 	return nil
 }
 

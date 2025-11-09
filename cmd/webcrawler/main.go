@@ -6,21 +6,14 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-<<<<<<< HEAD
-=======
-	"log/slog"
->>>>>>> b22344a4 (refactor to server)
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-<<<<<<< HEAD
 	"go.uber.org/zap"
 
-=======
->>>>>>> b22344a4 (refactor to server)
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/api"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/clock/system"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/config"
@@ -31,10 +24,7 @@ import (
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/hash/sha256"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/headless/detector"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/id/uuid"
-<<<<<<< HEAD
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/logging"
-=======
->>>>>>> b22344a4 (refactor to server)
 	memorypublisher "github.com/JakeFAU/realtime-cpi-crawler/internal/publisher/memory"
 	queueMemory "github.com/JakeFAU/realtime-cpi-crawler/internal/queue/memory"
 	memoryStorage "github.com/JakeFAU/realtime-cpi-crawler/internal/storage/memory"
@@ -45,7 +35,6 @@ func main() {
 	cfgPath := flag.String("config", "", "Path to config file")
 	flag.Parse()
 
-<<<<<<< HEAD
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "load config failed: %v\n", err)
@@ -66,18 +55,6 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-=======
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
-	cfg, err := config.Load(*cfgPath)
-	if err != nil {
-		logger.Error("load config failed", "error", err)
-		return
-	}
-
->>>>>>> b22344a4 (refactor to server)
 	jobStore := memoryStorage.NewJobStore()
 	blobStore := memoryStorage.NewBlobStore()
 	publisher := memorypublisher.New()
@@ -99,11 +76,7 @@ func main() {
 			NavigationTimeout: time.Duration(cfg.Headless.NavTimeoutSec) * time.Second,
 		})
 		if err != nil {
-<<<<<<< HEAD
 			logger.Warn("headless fetcher init failed", zap.Error(err))
-=======
-			logger.Error("headless fetcher init failed", "error", err)
->>>>>>> b22344a4 (refactor to server)
 		} else {
 			headless = headlessFetcher
 		}
@@ -117,7 +90,6 @@ func main() {
 
 	var workers []*worker.Worker
 	for i := 0; i < cfg.Crawler.Concurrency; i++ {
-<<<<<<< HEAD
 		workers = append(workers, worker.New(
 			queue,
 			jobStore,
@@ -136,29 +108,6 @@ func main() {
 	dispatch := dispatcher.New(queue, workers)
 
 	apiServer := api.NewServer(jobStore, dispatch, idGen, clock, cfg, logger.Named("api"))
-=======
-		workers = append(
-			workers,
-			worker.New(
-				queue,
-				jobStore,
-				blobStore,
-				publisher,
-				hasher,
-				clock,
-				probeFetcher,
-				headless,
-				detect,
-				nil,
-				workerCfg,
-				logger,
-			),
-		)
-	}
-	dispatch := dispatcher.New(queue, workers)
-
-	apiServer := api.NewServer(jobStore, dispatch, idGen, clock, cfg)
->>>>>>> b22344a4 (refactor to server)
 
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Server.Port),
@@ -172,15 +121,9 @@ func main() {
 	}()
 
 	go func() {
-<<<<<<< HEAD
 		logger.Info("http server started", zap.Int("port", cfg.Server.Port))
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Error("http server error", zap.Error(err))
-=======
-		logger.Info("http server started", "port", cfg.Server.Port)
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Error("http server error", "error", err)
->>>>>>> b22344a4 (refactor to server)
 			stop()
 		}
 	}()
@@ -191,11 +134,7 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-<<<<<<< HEAD
 		logger.Error("server shutdown error", zap.Error(err))
-=======
-		logger.Error("server shutdown error", "error", err)
->>>>>>> b22344a4 (refactor to server)
 	}
 	queue.Close()
 	logger.Info("shutdown complete")

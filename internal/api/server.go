@@ -7,23 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-<<<<<<< HEAD
 	"net"
 	"net/http"
-=======
-	"log/slog"
-	"net"
-	"net/http"
-	"os"
->>>>>>> b22344a4 (refactor to server)
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-<<<<<<< HEAD
 	"go.uber.org/zap"
-=======
->>>>>>> b22344a4 (refactor to server)
 
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/config"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/crawler"
@@ -38,10 +28,7 @@ type Server struct {
 	idGen      crawler.IDGenerator
 	clock      crawler.Clock
 	cfg        config.Config
-<<<<<<< HEAD
 	logger     *zap.Logger
-=======
->>>>>>> b22344a4 (refactor to server)
 }
 
 const metricsPayload = "# HELP webcrawler_build_info Build info\n" +
@@ -55,10 +42,7 @@ func NewServer(
 	idGen crawler.IDGenerator,
 	clock crawler.Clock,
 	cfg config.Config,
-<<<<<<< HEAD
 	logger *zap.Logger,
-=======
->>>>>>> b22344a4 (refactor to server)
 ) *Server {
 	s := &Server{
 		jobStore:   jobStore,
@@ -66,20 +50,12 @@ func NewServer(
 		idGen:      idGen,
 		clock:      clock,
 		cfg:        cfg,
-<<<<<<< HEAD
 		logger:     logger,
 	}
 	r := chi.NewRouter()
 	r.Use(requestIDMiddleware)
 	r.Use(s.loggingMiddleware)
 	r.Use(s.recoverMiddleware)
-=======
-	}
-	r := chi.NewRouter()
-	r.Use(requestIDMiddleware)
-	r.Use(loggingMiddleware)
-	r.Use(recoverMiddleware)
->>>>>>> b22344a4 (refactor to server)
 	r.Use(timeoutMiddleware(60 * time.Second))
 	if cfg.Auth.Enabled {
 		r.Use(apiKeyMiddleware(cfg.Auth.APIKey))
@@ -123,11 +99,7 @@ func (s *Server) metrics(w http.ResponseWriter, _ *http.Request) {
 	// Placeholder metrics endpoint; wire Prometheus registry in future.
 	w.Header().Set("Content-Type", "text/plain")
 	if _, err := w.Write([]byte(metricsPayload)); err != nil {
-<<<<<<< HEAD
 		s.logger.Error("metrics write failed", zap.Error(err))
-=======
-		slog.Default().Error("metrics write failed", "error", err)
->>>>>>> b22344a4 (refactor to server)
 	}
 }
 
@@ -142,10 +114,7 @@ func (s *Server) submitCustomJob(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-<<<<<<< HEAD
 	s.logger.Debug("custom job submitted", zap.Strings("urls", params.URLs))
-=======
->>>>>>> b22344a4 (refactor to server)
 	jobID, err := s.enqueueJob(r.Context(), params)
 	if err != nil {
 		status := http.StatusInternalServerError
@@ -170,10 +139,7 @@ func (s *Server) submitStandardJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	params := s.applyDefaults(cloneJobParameters(templateParams))
-<<<<<<< HEAD
 	s.logger.Info("standard job submitted", zap.String("template", req.Name), zap.Strings("urls", params.URLs))
-=======
->>>>>>> b22344a4 (refactor to server)
 	jobID, err := s.enqueueJob(r.Context(), params)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -219,10 +185,7 @@ func (s *Server) cancelJob(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "job not found")
 		return
 	}
-<<<<<<< HEAD
 	s.logger.Info("job canceled via API", zap.String("job_id", jobID))
-=======
->>>>>>> b22344a4 (refactor to server)
 	writeJSON(w, http.StatusOK, map[string]string{"job_id": jobID, "status": string(crawler.JobStatusCanceled)})
 }
 
@@ -256,10 +219,7 @@ func (s *Server) enqueueJob(ctx context.Context, params crawler.JobParameters) (
 	if err := s.dispatcher.Enqueue(queueCtx, item); err != nil {
 		return "", fmt.Errorf("enqueue job: %w", err)
 	}
-<<<<<<< HEAD
 	s.logger.Info("job queued", zap.String("job_id", jobID), zap.Int("url_count", len(params.URLs)))
-=======
->>>>>>> b22344a4 (refactor to server)
 	return jobID, nil
 }
 
@@ -388,48 +348,26 @@ func requestIDMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-<<<<<<< HEAD
 func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
-=======
-func loggingMiddleware(next http.Handler) http.Handler {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
->>>>>>> b22344a4 (refactor to server)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		ww := &responseWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(ww, r)
-<<<<<<< HEAD
 		s.logger.Info("request completed",
 			zap.String("method", r.Method),
 			zap.String("path", r.URL.Path),
 			zap.Int("status", ww.status),
 			zap.Duration("duration", time.Since(start)),
 			zap.String("request_id", requestIDFromContext(r.Context())),
-=======
-		logger.Info("request completed",
-			"method", r.Method,
-			"path", r.URL.Path,
-			"status", ww.status,
-			"duration_ms", time.Since(start).Milliseconds(),
->>>>>>> b22344a4 (refactor to server)
 		)
 	})
 }
 
-<<<<<<< HEAD
 func (s *Server) recoverMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if rec := recover(); rec != nil {
 				s.logger.Error("panic recovered", zap.Any("error", rec))
-=======
-func recoverMiddleware(next http.Handler) http.Handler {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer func() {
-			if rec := recover(); rec != nil {
-				logger.Error("panic recovered", "error", rec)
->>>>>>> b22344a4 (refactor to server)
 				writeError(w, http.StatusInternalServerError, "internal server error")
 			}
 		}()
@@ -480,7 +418,6 @@ func (rw *responseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 
 type requestIDKey struct{}
 
-<<<<<<< HEAD
 func requestIDFromContext(ctx context.Context) string {
 	if v, ok := ctx.Value(requestIDKey{}).(string); ok {
 		return v
@@ -488,8 +425,6 @@ func requestIDFromContext(ctx context.Context) string {
 	return ""
 }
 
-=======
->>>>>>> b22344a4 (refactor to server)
 func apiKeyMiddleware(expected string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -510,11 +445,7 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(payload); err != nil {
-<<<<<<< HEAD
 		zap.L().Error("write JSON failed", zap.Error(err))
-=======
-		slog.Default().Error("write JSON failed", "error", err)
->>>>>>> b22344a4 (refactor to server)
 	}
 }
 
