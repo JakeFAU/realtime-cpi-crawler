@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/crawler"
+	"github.com/JakeFAU/realtime-cpi-crawler/internal/metrics"
 )
 
 // Queue is a bounded in-memory queue with context-aware operations.
@@ -15,6 +16,7 @@ type Queue struct {
 	ch      chan crawler.QueueItem
 	closeMu sync.Mutex
 	closed  bool
+	meters  *metrics.Collectors
 }
 
 // NewQueue constructs a new queue with the provided capacity.
@@ -24,12 +26,19 @@ func NewQueue(capacity int) *Queue {
 	}
 }
 
+// WithMetrics attaches a metrics collector and returns the queue for chaining.
+func (q *Queue) WithMetrics(m *metrics.Collectors) *Queue {
+	q.meters = m
+	return q
+}
+
 // Enqueue pushes a job into the queue or returns if the context ends.
 func (q *Queue) Enqueue(ctx context.Context, job crawler.QueueItem) error {
 	select {
 	case <-ctx.Done():
 		return fmt.Errorf("enqueue canceled: %w", ctx.Err())
 	case q.ch <- job:
+		q.observe("enqueue")
 		return nil
 	}
 }
@@ -43,6 +52,7 @@ func (q *Queue) Dequeue(ctx context.Context) (crawler.QueueItem, error) {
 		if !ok {
 			return crawler.QueueItem{}, errors.New("queue closed")
 		}
+		q.observe("dequeue")
 		return job, nil
 	}
 }
@@ -56,4 +66,11 @@ func (q *Queue) Close() {
 	}
 	close(q.ch)
 	q.closed = true
+}
+
+func (q *Queue) observe(operation string) {
+	if q.meters == nil {
+		return
+	}
+	q.meters.RecordQueueEvent(operation, len(q.ch))
 }

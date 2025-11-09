@@ -14,7 +14,7 @@ This document expands on the README to describe configuration, APIs, operations,
    - Hash HTML, persist to BlobStore, save `PageRecord`, publish message to Pub/Sub interface.
    - Update counters and final job status.
 4. **Storage:** Currently in-memory stores; swap for DB/Blob services for persistence beyond process lifetime.
-5. **Observability:** Zap logging for structured debug/info/error; stub `/metrics` endpoint for Prometheus; placement hooks exist for OTEL spans.
+5. **Observability:** Zap logging for structured debug/info/error plus Prometheus metrics (HTTP, queue, jobs, pages); placement hooks exist for OTEL spans.
 
 ---
 
@@ -159,7 +159,7 @@ Response: `{"job_id": "<uuid>"}` (202 Accepted or 429 if queue full).
 
 - `/healthz` – simple 200 response.
 - `/readyz` – always ready in memory-only mode; extend to check dependencies.
-- `/metrics` – stub text. Replace with Prometheus registry export for production.
+- `/metrics` – Prometheus registry export (HTTP latency, queue depth, job/page counters).
 
 ---
 
@@ -225,7 +225,7 @@ curl -XPOST localhost:8080/v1/jobs/custom \
 ## 8. Extending the System
 
 1. **Real Storage/PubSub:** Implement interfaces in `internal/storage`, `internal/publisher` with real clients.
-2. **Metrics:** Replace placeholder `/metrics` with actual Prometheus registry and add instrumented counters/gauges/histograms.
+2. **Metrics:** Prometheus registry + instrumentation in API/queue/workers for HTTP latency, queue depth, job lifecycle, headless promotions.
 3. **Queues/Policies:** Introduce domain-level semaphores, circuit breakers for HTTP 429/5xx, and integrate robots parser.
 4. **Integration tests:** Use GCS emulator, Pub/Sub emulator, and local HTTP fixtures for end-to-end testing.
 5. **CLI/SDK:** Provide client library or CLI to submit jobs, monitor progress, and fetch results.

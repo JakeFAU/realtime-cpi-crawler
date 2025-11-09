@@ -109,6 +109,7 @@ linters:
             - github.com/temoto/robotstxt
             - github.com/go-chi/chi/v5
             - github.com/google/uuid
+            - github.com/prometheus/client_golang/prometheus
           # Deny specific problematic packages
           deny:
             - pkg: "math/rand$"

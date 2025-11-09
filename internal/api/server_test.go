@@ -20,6 +20,7 @@ import (
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/config"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/crawler"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/dispatcher"
+	"github.com/JakeFAU/realtime-cpi-crawler/internal/metrics"
 	queueMemory "github.com/JakeFAU/realtime-cpi-crawler/internal/queue/memory"
 )
 
@@ -42,7 +43,7 @@ func TestServer_SubmitCustomJob_Succeeds(t *testing.T) {
 		},
 		Logging: config.LoggingConfig{Development: true},
 	}
-	server := NewServer(jobStore, dispatch, idGen, clock, cfg, zap.NewNop())
+	server := NewServer(jobStore, dispatch, idGen, clock, cfg, metrics.New(), zap.NewNop())
 
 	reqBody := []byte(`{"urls":["https://example.com"]}`)
 	req := httptest.NewRequest(http.MethodPost, "/v1/jobs/custom", bytes.NewReader(reqBody))
@@ -180,6 +181,7 @@ func TestServer_SubmitStandardJob_Succeeds(t *testing.T) {
 		&fakeIDGen{ids: []string{"std-job"}},
 		&fakeClock{now: time.Unix(50, 0)},
 		cfg,
+		metrics.New(),
 		zap.NewNop(),
 	)
 
@@ -209,6 +211,24 @@ func TestServer_GetJobResult_ListPagesError(t *testing.T) {
 	require.Equal(t, http.StatusInternalServerError, rec.Code)
 }
 
+// TestServer_MetricsEndpointExportsRegistry validates /metrics exposes Prometheus data.
+func TestServer_MetricsEndpointExportsRegistry(t *testing.T) {
+	t.Parallel()
+
+	server := newTestServer()
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	req = httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	rec = httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), "webcrawler_http_requests_total")
+}
+
 // TestServer_APIKeyMiddleware ensures API key protection guards routes when enabled.
 func TestServer_APIKeyMiddleware(t *testing.T) {
 	t.Parallel()
@@ -230,7 +250,15 @@ func TestServer_APIKeyMiddleware(t *testing.T) {
 			APIKey:  "secret",
 		},
 	}
-	server := NewServer(jobStore, dispatch, &fakeIDGen{}, &fakeClock{now: time.Unix(100, 0)}, cfg, zap.NewNop())
+	server := NewServer(
+		jobStore,
+		dispatch,
+		&fakeIDGen{},
+		&fakeClock{now: time.Unix(100, 0)},
+		cfg,
+		metrics.New(),
+		zap.NewNop(),
+	)
 
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
@@ -423,6 +451,7 @@ func newTestServerWithStore(jobStore crawler.JobStore) *Server {
 		&fakeIDGen{},
 		&fakeClock{now: time.Unix(100, 0)},
 		cfg,
+		metrics.New(),
 		zap.NewNop(),
 	)
 }
