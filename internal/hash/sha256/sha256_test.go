@@ -1,7 +1,9 @@
+// Package sha256 includes tests for the SHA-256 hasher adapter.
 package sha256
 
 import "testing"
 
+// TestHasherHashDeterministic ensures repeated hashing yields the same digest.
 func TestHasherHashDeterministic(t *testing.T) {
 	t.Parallel()
 

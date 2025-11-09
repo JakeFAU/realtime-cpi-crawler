@@ -1,3 +1,4 @@
+// Package memory includes tests for the in-memory blob store.
 package memory
 
 import (
@@ -5,6 +6,7 @@ import (
 	"testing"
 )
 
+// TestBlobStorePutObjectCopiesData ensures stored blobs are immutable copies.
 func TestBlobStorePutObjectCopiesData(t *testing.T) {
 	t.Parallel()
 

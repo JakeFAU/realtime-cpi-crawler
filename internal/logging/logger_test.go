@@ -1,7 +1,9 @@
+// Package logging includes tests for the zap logger helpers.
 package logging
 
 import "testing"
 
+// TestNewDevelopmentLogger confirms the development logger builds and logs.
 func TestNewDevelopmentLogger(t *testing.T) {
 	t.Parallel()
 
@@ -16,6 +18,7 @@ func TestNewDevelopmentLogger(t *testing.T) {
 	logger.Info("development logger ready")
 }
 
+// TestNewProductionLogger ensures the production logger configuration succeeds.
 func TestNewProductionLogger(t *testing.T) {
 	t.Parallel()
 

@@ -1,3 +1,4 @@
+// Package dispatcher contains tests for worker coordination.
 package dispatcher
 
 import (
@@ -13,6 +14,7 @@ import (
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/worker"
 )
 
+// TestDispatcherRunStartsWorkers ensures workers begin processing and stop on cancel.
 func TestDispatcherRunStartsWorkers(t *testing.T) {
 	t.Parallel()
 
@@ -55,6 +57,7 @@ func TestDispatcherRunStartsWorkers(t *testing.T) {
 	}
 }
 
+// TestDispatcherEnqueueForwardsErrors verifies queue errors are wrapped for callers.
 func TestDispatcherEnqueueForwardsErrors(t *testing.T) {
 	t.Parallel()
 
