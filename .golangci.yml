@@ -98,26 +98,17 @@ linters:
           # Default allow all standard library packages
           allow:
             - $gostd
-            - github.com/spf13/cobra
             - github.com/spf13/viper
             - go.uber.org/zap
             - cloud.google.com/go
-            - github.com/JakeFAU/realtime-cpi/webcrawler
-            - github.com/jmoiron/sqlx
-            - github.com/lib/pq
+            - github.com/JakeFAU/realtime-cpi-crawler/internal
             - github.com/gocolly/colly/v2
-            - github.com/stretchr/testify/mock
-            - github.com/stretchr/testify/require
-            - github.com/stretchr/testify/assert
-            - github.com/DATA-DOG/go-sqlmock
-            - google.golang.org/api/option
-            - google.golang.org/grpc
-            - github.com/googleapis/gax-go/v2
-            - github.com/prometheus/client_golang/prometheus
-            - github.com/PuerkitoBio/goquery
+            - github.com/stretchr/testify
             - github.com/chromedp
             - golang.org/x/time/rate
             - github.com/temoto/robotstxt
+            - github.com/go-chi/chi/v5
+            - github.com/google/uuid
           # Deny specific problematic packages
           deny:
             - pkg: "math/rand$"

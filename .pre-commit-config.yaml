@@ -47,4 +47,12 @@ repos:
       # --- 5. Security Scan ---
       # go-vulncheck is NOT included in golangci-lint,
       # so we run it separately.
+      # Replaced by local hook due to upstream panic.
+
+  - repo: local
+    hooks:
       - id: go-vulncheck-repo-mod
+        name: go-vulncheck-repo-mod
+        entry: ./scripts/run-govulncheck.sh
+        language: system
+        pass_filenames: false
