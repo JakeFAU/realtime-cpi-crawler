@@ -1,3 +1,4 @@
+// Package detector tests cover the headless promotion heuristics.
 package detector
 
 import (
@@ -8,6 +9,7 @@ import (
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/crawler"
 )
 
+// TestHeuristic_ShouldPromote_EmptyBody triggers promotion when body is empty.
 func TestHeuristic_ShouldPromote_EmptyBody(t *testing.T) {
 	t.Parallel()
 
@@ -19,6 +21,7 @@ func TestHeuristic_ShouldPromote_EmptyBody(t *testing.T) {
 	require.True(t, h.ShouldPromote(resp))
 }
 
+// TestHeuristic_ShouldPromote_SPAMarkers ensures SPA markers force promotion.
 func TestHeuristic_ShouldPromote_SPAMarkers(t *testing.T) {
 	t.Parallel()
 
@@ -30,6 +33,7 @@ func TestHeuristic_ShouldPromote_SPAMarkers(t *testing.T) {
 	require.True(t, h.ShouldPromote(resp))
 }
 
+// TestHeuristic_ShouldPromote_ScriptDensity verifies script-heavy bodies promote.
 func TestHeuristic_ShouldPromote_ScriptDensity(t *testing.T) {
 	t.Parallel()
 
@@ -41,6 +45,7 @@ func TestHeuristic_ShouldPromote_ScriptDensity(t *testing.T) {
 	require.True(t, h.ShouldPromote(resp))
 }
 
+// TestHeuristic_ShouldPromote_DisabledForNon200 confirms non-200 responses skip promotion.
 func TestHeuristic_ShouldPromote_DisabledForNon200(t *testing.T) {
 	t.Parallel()
 

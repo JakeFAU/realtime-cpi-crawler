@@ -1,3 +1,4 @@
+// Package memory includes tests validating the in-memory queue behavior.
 package memory
 
 import (
@@ -8,6 +9,7 @@ import (
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/crawler"
 )
 
+// TestQueueEnqueueDequeue ensures jobs flow through the queue end-to-end.
 func TestQueueEnqueueDequeue(t *testing.T) {
 	t.Parallel()
 
@@ -41,6 +43,7 @@ func TestQueueEnqueueDequeue(t *testing.T) {
 	}
 }
 
+// TestQueueCancelationErrors verifies cancellation surfaces enqueue/dequeue errors.
 func TestQueueCancelationErrors(t *testing.T) {
 	t.Parallel()
 
@@ -64,6 +67,7 @@ func TestQueueCancelationErrors(t *testing.T) {
 	}
 }
 
+// TestQueueClose confirms closing the queue unblocks waiters.
 func TestQueueClose(t *testing.T) {
 	t.Parallel()
 

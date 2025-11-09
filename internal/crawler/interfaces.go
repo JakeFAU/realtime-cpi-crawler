@@ -1,3 +1,4 @@
+// Package crawler declares the interfaces shared across the crawler subsystems.
 package crawler
 
 import (

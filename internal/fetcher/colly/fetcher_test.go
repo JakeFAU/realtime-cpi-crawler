@@ -1,3 +1,4 @@
+// Package collyfetcher includes tests for the Colly-based fetcher wiring.
 package collyfetcher
 
 import (
@@ -12,6 +13,7 @@ import (
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/crawler"
 )
 
+// TestFetcherBuildCollector checks collector construction honors config flags.
 func TestFetcherBuildCollector(t *testing.T) {
 	t.Parallel()
 
@@ -33,6 +35,7 @@ func TestFetcherBuildCollector(t *testing.T) {
 	}
 }
 
+// TestConfigureCollectorHooks ensures the configured hooks populate responses and errors.
 func TestConfigureCollectorHooks(t *testing.T) {
 	t.Parallel()
 
@@ -78,6 +81,7 @@ func TestConfigureCollectorHooks(t *testing.T) {
 	}
 }
 
+// TestCopyHeadersHandlesNil verifies header copying is a no-op when none are provided.
 func TestCopyHeadersHandlesNil(t *testing.T) {
 	t.Parallel()
 

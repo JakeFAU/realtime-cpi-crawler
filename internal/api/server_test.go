@@ -1,3 +1,4 @@
+// Package api contains tests for the HTTP server and middleware wiring.
 package api
 
 import (
@@ -22,6 +23,7 @@ import (
 	queueMemory "github.com/JakeFAU/realtime-cpi-crawler/internal/queue/memory"
 )
 
+// TestServer_SubmitCustomJob_Succeeds verifies that valid custom jobs get enqueued.
 func TestServer_SubmitCustomJob_Succeeds(t *testing.T) {
 	t.Parallel()
 
@@ -55,6 +57,7 @@ func TestServer_SubmitCustomJob_Succeeds(t *testing.T) {
 	require.Equal(t, "job-custom", item.JobID)
 }
 
+// TestServer_SubmitCustomJob_InvalidJSON ensures malformed payloads are rejected.
 func TestServer_SubmitCustomJob_InvalidJSON(t *testing.T) {
 	t.Parallel()
 
@@ -67,6 +70,7 @@ func TestServer_SubmitCustomJob_InvalidJSON(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
+// TestServer_SubmitCustomJob_MissingURLs validates that empty URL lists are rejected.
 func TestServer_SubmitCustomJob_MissingURLs(t *testing.T) {
 	t.Parallel()
 
@@ -80,6 +84,7 @@ func TestServer_SubmitCustomJob_MissingURLs(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "urls required")
 }
 
+// TestServer_SubmitStandardJob_TemplateMissing confirms missing templates return 404.
 func TestServer_SubmitStandardJob_TemplateMissing(t *testing.T) {
 	t.Parallel()
 
@@ -92,6 +97,7 @@ func TestServer_SubmitStandardJob_TemplateMissing(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, rec.Code)
 }
 
+// TestServer_GetJobStatus_ReturnsJob ensures status lookups return stored jobs.
 func TestServer_GetJobStatus_ReturnsJob(t *testing.T) {
 	t.Parallel()
 
@@ -108,6 +114,7 @@ func TestServer_GetJobStatus_ReturnsJob(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "succeeded")
 }
 
+// TestServer_GetJobResult_ReturnsPages validates that page data is returned with job results.
 func TestServer_GetJobResult_ReturnsPages(t *testing.T) {
 	t.Parallel()
 
@@ -127,6 +134,7 @@ func TestServer_GetJobResult_ReturnsPages(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "example.com")
 }
 
+// TestServer_CancelJob_SetsStatusCanceled confirms cancel requests update job state.
 func TestServer_CancelJob_SetsStatusCanceled(t *testing.T) {
 	t.Parallel()
 
@@ -143,6 +151,7 @@ func TestServer_CancelJob_SetsStatusCanceled(t *testing.T) {
 	require.Equal(t, crawler.JobStatusCanceled, jobStore.lastStatus("job-cancel"))
 }
 
+// TestServer_SubmitStandardJob_Succeeds checks that predefined jobs enqueue successfully.
 func TestServer_SubmitStandardJob_Succeeds(t *testing.T) {
 	t.Parallel()
 
@@ -184,6 +193,7 @@ func TestServer_SubmitStandardJob_Succeeds(t *testing.T) {
 	require.Equal(t, "std-job", item.JobID)
 }
 
+// TestServer_GetJobResult_ListPagesError surfaces list failures as server errors.
 func TestServer_GetJobResult_ListPagesError(t *testing.T) {
 	t.Parallel()
 
@@ -199,6 +209,7 @@ func TestServer_GetJobResult_ListPagesError(t *testing.T) {
 	require.Equal(t, http.StatusInternalServerError, rec.Code)
 }
 
+// TestServer_APIKeyMiddleware ensures API key protection guards routes when enabled.
 func TestServer_APIKeyMiddleware(t *testing.T) {
 	t.Parallel()
 
@@ -233,6 +244,7 @@ func TestServer_APIKeyMiddleware(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 }
 
+// TestRequestIDMiddlewareSetsHeader asserts every request gains an ID header.
 func TestRequestIDMiddlewareSetsHeader(t *testing.T) {
 	t.Parallel()
 
@@ -243,6 +255,7 @@ func TestRequestIDMiddlewareSetsHeader(t *testing.T) {
 	require.NotEmpty(t, rec.Header().Get("X-Request-ID"))
 }
 
+// TestResponseWriterHijackBehavior verifies hijacking behavior mirrors the wrapped writer.
 func TestResponseWriterHijackBehavior(t *testing.T) {
 	t.Parallel()
 

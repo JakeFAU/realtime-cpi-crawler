@@ -1,3 +1,4 @@
+// Package system exercises the real-time clock adapter.
 package system
 
 import (
@@ -5,6 +6,7 @@ import (
 	"time"
 )
 
+// TestClockNowUTC ensures the clock returns UTC timestamps.
 func TestClockNowUTC(t *testing.T) {
 	t.Parallel()
 
@@ -23,6 +25,7 @@ func TestClockNowUTC(t *testing.T) {
 	}
 }
 
+// TestClockNowMonotonic checks successive timestamps are non-decreasing.
 func TestClockNowMonotonic(t *testing.T) {
 	t.Parallel()
 

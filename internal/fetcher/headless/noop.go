@@ -1,3 +1,4 @@
+// Package headless also exposes a noop fetcher for builds without Chrome.
 package headless
 
 import (

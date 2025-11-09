@@ -1,3 +1,4 @@
+// Package memory hosts in-memory storage implementations for local development.
 package memory
 
 import (

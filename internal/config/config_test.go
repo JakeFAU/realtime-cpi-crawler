@@ -1,3 +1,4 @@
+// Package config provides tests covering configuration loading and validation.
 package config
 
 import (
@@ -8,6 +9,7 @@ import (
 	"time"
 )
 
+// TestLoadWithFileOverrides confirms file overrides and defaults merge correctly.
 func TestLoadWithFileOverrides(t *testing.T) {
 	t.Parallel()
 
@@ -80,6 +82,7 @@ standard_jobs:
 	}
 }
 
+// TestConfigValidateErrors enumerates validation failures for invalid settings.
 func TestConfigValidateErrors(t *testing.T) {
 	t.Parallel()
 

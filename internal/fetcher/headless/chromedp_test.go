@@ -1,3 +1,4 @@
+// Package headless is exercised here to ensure the chromedp fetcher behaves predictably.
 package headless
 
 import (
@@ -11,6 +12,7 @@ import (
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/crawler"
 )
 
+// TestNewChromedpLimiterValidation ensures invalid limiter values surface errors.
 func TestNewChromedpLimiterValidation(t *testing.T) {
 	t.Parallel()
 
@@ -26,6 +28,7 @@ func TestNewChromedpLimiterValidation(t *testing.T) {
 	}
 }
 
+// TestFetcherNavTimeoutDefault confirms navigation timeouts fall back to defaults.
 func TestFetcherNavTimeoutDefault(t *testing.T) {
 	t.Parallel()
 
@@ -39,6 +42,7 @@ func TestFetcherNavTimeoutDefault(t *testing.T) {
 	}
 }
 
+// TestCloneHeaderAndNetworkHeaders ensures header cloning avoids aliasing.
 func TestCloneHeaderAndNetworkHeaders(t *testing.T) {
 	t.Parallel()
 
@@ -60,6 +64,7 @@ func TestCloneHeaderAndNetworkHeaders(t *testing.T) {
 	}
 }
 
+// TestResponseMetaCaptureAndFallbacks validates captured metadata and fallback logic.
 func TestResponseMetaCaptureAndFallbacks(t *testing.T) {
 	t.Parallel()
 
@@ -84,6 +89,7 @@ func TestResponseMetaCaptureAndFallbacks(t *testing.T) {
 	}
 }
 
+// TestNoopFetcherError verifies the noop fetcher always returns an error.
 func TestNoopFetcherError(t *testing.T) {
 	t.Parallel()
 

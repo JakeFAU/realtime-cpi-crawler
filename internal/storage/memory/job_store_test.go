@@ -1,3 +1,4 @@
+// Package memory includes tests for the in-memory job store.
 package memory
 
 import (
@@ -7,6 +8,7 @@ import (
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/crawler"
 )
 
+// TestJobStoreLifecycle exercises job creation, updates, and retrieval.
 func TestJobStoreLifecycle(t *testing.T) {
 	t.Parallel()
 

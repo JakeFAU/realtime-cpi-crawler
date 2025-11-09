@@ -1,3 +1,4 @@
+// Package uuid includes tests for the UUID generator wrapper.
 package uuid
 
 import (
@@ -6,6 +7,7 @@ import (
 	goUUID "github.com/google/uuid"
 )
 
+// TestGeneratorNewID ensures generated IDs are unique and valid UUIDs.
 func TestGeneratorNewID(t *testing.T) {
 	t.Parallel()
 

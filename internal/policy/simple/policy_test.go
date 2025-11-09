@@ -1,7 +1,9 @@
+// Package simple includes tests for the permissive policy implementation.
 package simple
 
 import "testing"
 
+// TestPolicyAllowMethods ensures the placeholder policy allows operations.
 func TestPolicyAllowMethods(t *testing.T) {
 	t.Parallel()
 

@@ -1,3 +1,4 @@
+// Package memory includes tests for the in-memory publisher.
 package memory
 
 import (
@@ -5,6 +6,7 @@ import (
 	"testing"
 )
 
+// TestPublisherStoresMessages verifies published messages are retained and copied.
 func TestPublisherStoresMessages(t *testing.T) {
 	t.Parallel()
 

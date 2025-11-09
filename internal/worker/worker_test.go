@@ -1,3 +1,4 @@
+// Package worker contains integration-style tests for the worker pipeline.
 package worker
 
 import (
@@ -15,6 +16,7 @@ import (
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/crawler"
 )
 
+// TestWorker_ProcessJob_SuccessFlow ensures a happy path job processes successfully.
 func TestWorker_ProcessJob_SuccessFlow(t *testing.T) {
 	t.Parallel()
 
@@ -77,6 +79,7 @@ func TestWorker_ProcessJob_SuccessFlow(t *testing.T) {
 	cancel()
 }
 
+// TestWorker_ProcessJob_PublishFailureMarksJobFailed verifies publish errors mark jobs failed.
 func TestWorker_ProcessJob_PublishFailureMarksJobFailed(t *testing.T) {
 	t.Parallel()
 
@@ -137,6 +140,7 @@ func TestWorker_ProcessJob_PublishFailureMarksJobFailed(t *testing.T) {
 	cancel()
 }
 
+// TestWorker_ProcessJob_HeadlessPromotionApplied confirms detector-triggered promotions.
 func TestWorker_ProcessJob_HeadlessPromotionApplied(t *testing.T) {
 	t.Parallel()
 
@@ -284,6 +288,7 @@ func (f *fakeJobStore) RecordPage(_ context.Context, page crawler.PageRecord) er
 	return nil
 }
 
+// TestWorkerBuildBlobPath checks blob path prefix handling.
 func TestWorkerBuildBlobPath(t *testing.T) {
 	t.Parallel()
 
@@ -297,6 +302,7 @@ func TestWorkerBuildBlobPath(t *testing.T) {
 	}
 }
 
+// TestWorkerAllowHelpers ensures policy hooks are honored.
 func TestWorkerAllowHelpers(t *testing.T) {
 	t.Parallel()
 
