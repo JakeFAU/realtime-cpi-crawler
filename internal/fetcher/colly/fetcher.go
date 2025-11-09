@@ -23,6 +23,12 @@ type Fetcher struct {
 	cfg Config
 }
 
+type collectorHooks interface {
+	OnRequest(colly.RequestCallback)
+	OnResponse(colly.ResponseCallback)
+	OnError(colly.ErrorCallback)
+}
+
 // New builds a Fetcher.
 func New(cfg Config) *Fetcher {
 	return &Fetcher{cfg: cfg}
@@ -64,11 +70,22 @@ func (f *Fetcher) buildCollector(
 	}
 	collector.SetRequestTimeout(timeout)
 
-	collector.OnRequest(func(r *colly.Request) {
+	f.configureCollectorHooks(collector, request, start, result, fetchErr)
+	return collector
+}
+
+func (f *Fetcher) configureCollectorHooks(
+	hooks collectorHooks,
+	request crawler.FetchRequest,
+	start time.Time,
+	result *crawler.FetchResponse,
+	fetchErr *error,
+) {
+	hooks.OnRequest(func(r *colly.Request) {
 		f.copyHeaders(request, r)
 	})
 
-	collector.OnResponse(func(r *colly.Response) {
+	hooks.OnResponse(func(r *colly.Response) {
 		*result = crawler.FetchResponse{
 			URL:          r.Request.URL.String(),
 			StatusCode:   r.StatusCode,
@@ -79,11 +96,9 @@ func (f *Fetcher) buildCollector(
 		}
 	})
 
-	collector.OnError(func(_ *colly.Response, err error) {
+	hooks.OnError(func(_ *colly.Response, err error) {
 		*fetchErr = err
 	})
-
-	return collector
 }
 
 func (f *Fetcher) runCollector(ctx context.Context, collector *colly.Collector, url string, fetchErr *error) error {

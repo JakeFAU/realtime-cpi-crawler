@@ -284,6 +284,49 @@ func (f *fakeJobStore) RecordPage(_ context.Context, page crawler.PageRecord) er
 	return nil
 }
 
+func TestWorkerBuildBlobPath(t *testing.T) {
+	t.Parallel()
+
+	w := New(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, Config{BlobPrefix: "/pages/"}, zap.NewNop())
+	if got := w.buildBlobPath("job", "hash"); got != "pages/job/hash.html" {
+		t.Fatalf("unexpected blob path: %s", got)
+	}
+	w.cfg.BlobPrefix = ""
+	if got := w.buildBlobPath("job", "hash"); got != "job/hash.html" {
+		t.Fatalf("unexpected fallback blob path: %s", got)
+	}
+}
+
+func TestWorkerAllowHelpers(t *testing.T) {
+	t.Parallel()
+
+	w := New(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, Config{}, zap.NewNop())
+	if !w.allowFetch("job", "url", 0) || !w.allowHeadless("job", "url", 0) {
+		t.Fatal("expected allows with nil policy")
+	}
+
+	w.policy = fakePolicy{allowFetch: false, allowHeadless: true}
+	if w.allowFetch("job", "url", 0) {
+		t.Fatal("expected policy to block fetch")
+	}
+	if !w.allowHeadless("job", "url", 0) {
+		t.Fatal("expected policy to allow headless")
+	}
+}
+
+type fakePolicy struct {
+	allowFetch    bool
+	allowHeadless bool
+}
+
+func (f fakePolicy) AllowHeadless(string, string, int) bool {
+	return f.allowHeadless
+}
+
+func (f fakePolicy) AllowFetch(string, string, int) bool {
+	return f.allowFetch
+}
+
 func (f *fakeJobStore) GetJob(context.Context, string) (crawler.Job, error) {
 	return crawler.Job{}, nil
 }
