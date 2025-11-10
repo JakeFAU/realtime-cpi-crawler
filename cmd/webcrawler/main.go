@@ -3,44 +3,15 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
-	"net/http"
 	"os"
-	"os/signal"
-	"syscall"
-	"time"
 
-	"cloud.google.com/go/pubsub"
-	"cloud.google.com/go/storage"
-	"go.uber.org/zap"
-
-	"github.com/JakeFAU/realtime-cpi-crawler/internal/api"
-	"github.com/JakeFAU/realtime-cpi-crawler/internal/clock/system"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/config"
-	"github.com/JakeFAU/realtime-cpi-crawler/internal/crawler"
-	"github.com/JakeFAU/realtime-cpi-crawler/internal/dispatcher"
-	collyfetcher "github.com/JakeFAU/realtime-cpi-crawler/internal/fetcher/colly"
-	headlessfetcher "github.com/JakeFAU/realtime-cpi-crawler/internal/fetcher/headless"
-	"github.com/JakeFAU/realtime-cpi-crawler/internal/hash/sha256"
-	"github.com/JakeFAU/realtime-cpi-crawler/internal/headless/detector"
-	"github.com/JakeFAU/realtime-cpi-crawler/internal/id/uuid"
-	"github.com/JakeFAU/realtime-cpi-crawler/internal/logging"
-	"github.com/JakeFAU/realtime-cpi-crawler/internal/metrics"
-	"github.com/JakeFAU/realtime-cpi-crawler/internal/progress"
-	progresssinks "github.com/JakeFAU/realtime-cpi-crawler/internal/progress/sinks"
-	memorypublisher "github.com/JakeFAU/realtime-cpi-crawler/internal/publisher/memory"
-	gcppublisher "github.com/JakeFAU/realtime-cpi-crawler/internal/publisher/pubsub"
-	queueMemory "github.com/JakeFAU/realtime-cpi-crawler/internal/queue/memory"
-	gcsstorage "github.com/JakeFAU/realtime-cpi-crawler/internal/storage/gcs"
-	memoryStorage "github.com/JakeFAU/realtime-cpi-crawler/internal/storage/memory"
-	pgstore "github.com/JakeFAU/realtime-cpi-crawler/internal/storage/postgres"
-	"github.com/JakeFAU/realtime-cpi-crawler/internal/store"
-	"github.com/JakeFAU/realtime-cpi-crawler/internal/worker"
+	"github.com/JakeFAU/realtime-cpi-crawler/internal/server"
+	"go.uber.org/zap"
 )
 
-//nolint:gocyclo,gocognit // reason (main configuration and setup)
 func main() {
 	cfgPath := flag.String("config", "", "Path to config file")
 	flag.Parse()
@@ -50,205 +21,21 @@ func main() {
 		fmt.Fprintf(os.Stderr, "load config failed: %v\n", err)
 		os.Exit(1)
 	}
-	logger, err := logging.New(cfg.Logging.Development)
+
+	app, err := server.Build(context.Background(), &cfg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "logger init failed: %v\n", err)
+		// Assuming logger is not yet available, so using fmt.
+		fmt.Fprintf(os.Stderr, "application build failed: %v\n", err)
 		os.Exit(1)
 	}
-	defer func() {
-		if syncErr := logger.Sync(); syncErr != nil {
-			fmt.Fprintf(os.Stderr, "logger sync failed: %v\n", syncErr)
-		}
-	}()
-	zap.ReplaceGlobals(logger)
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
-	jobStore := memoryStorage.NewJobStore()
-	var blobStore crawler.BlobStore
-	var storageClient *storage.Client
-	switch cfg.Storage.Backend {
-	case "gcs":
-		storageClient, err = storage.NewClient(ctx)
-		if err != nil {
-			logger.Fatal("gcs client init failed", zap.Error(err))
-		}
-		defer func() {
-			if closeErr := storageClient.Close(); closeErr != nil {
-				logger.Warn("gcs client close failed", zap.Error(closeErr))
-			}
-		}()
-		blobStore, err = gcsstorage.New(storageClient, gcsstorage.Config{
-			Bucket: cfg.Storage.Bucket,
-		})
-		if err != nil {
-			logger.Fatal("gcs blob store init failed", zap.Error(err))
-		}
-	default:
-		blobStore = memoryStorage.NewBlobStore()
-	}
-	var retrievalStore crawler.RetrievalStore
-	if cfg.Database.DSN != "" {
-		retrievalStore, err = pgstore.NewRetrievalStore(ctx, pgstore.RetrievalStoreConfig{
-			DSN:             cfg.Database.DSN,
-			Table:           cfg.Database.Table,
-			MaxConns:        cfg.Database.MaxConns,
-			MinConns:        cfg.Database.MinConns,
-			MaxConnLifetime: cfg.Database.MaxConnLifetime,
-		})
-		if err != nil {
-			logger.Fatal("retrieval store init failed", zap.Error(err))
-		}
-		defer func() {
-			if closeErr := retrievalStore.Close(); closeErr != nil {
-				logger.Warn("retrieval store close failed", zap.Error(closeErr))
-			}
-		}()
-	}
-	var progressRepo store.ProgressRepository
-	var publisher crawler.Publisher
-	var pubsubClient *pubsub.Client
-	var pubsubTopic *pubsub.Topic
-	if cfg.PubSub.TopicName != "" && cfg.PubSub.ProjectID != "" {
-		pubsubClient, err = pubsub.NewClient(ctx, cfg.PubSub.ProjectID)
-		if err != nil {
-			logger.Fatal("pubsub client init failed", zap.Error(err))
-		}
-		pubsubTopic = pubsubClient.Topic(cfg.PubSub.TopicName)
-		publisher = gcppublisher.New(pubsubTopic)
-	} else {
-		publisher = memorypublisher.New()
-	}
-	defer func() {
-		if pubsubTopic != nil {
-			pubsubTopic.Stop()
-		}
-		if pubsubClient != nil {
-			if closeErr := pubsubClient.Close(); closeErr != nil {
-				logger.Warn("pubsub client close failed", zap.Error(closeErr))
-			}
-		}
-	}()
-	meters := metrics.New()
-	var progressHub *progress.Hub
-	var progressEmitter progress.Emitter
-	if cfg.Progress.Enabled {
-		var sinkList []progress.Sink
-		if meters != nil && meters.Registry() != nil {
-			promSink, err := progresssinks.NewPrometheusSink(meters.Registry())
-			if err != nil {
-				logger.Warn("prometheus progress sink init failed", zap.Error(err))
-			} else {
-				sinkList = append(sinkList, promSink)
-			}
-		}
-		if progressRepo != nil {
-			sinkList = append(sinkList, progresssinks.NewStoreSink(progressRepo, logger.Named("progress_store")))
-		}
-		if cfg.Progress.LogEnabled {
-			sinkList = append(sinkList, progresssinks.NewLogSink(logger.Named("progress_log")))
-		}
-		if len(sinkList) > 0 {
-			hubCfg := progress.Config{
-				BufferSize:     cfg.Progress.BufferSize,
-				MaxBatchEvents: cfg.Progress.Batch.MaxEvents,
-				MaxBatchWait:   time.Duration(cfg.Progress.Batch.MaxWaitMs) * time.Millisecond,
-				SinkTimeout:    time.Duration(cfg.Progress.SinkTimeoutMs) * time.Millisecond,
-				BaseContext:    ctx,
-				Logger:         logger.Named("progress_hub"),
-			}
-			progressHub = progress.NewHub(hubCfg, sinkList...)
-			progressEmitter = progressHub
-		}
-	}
-	queue := queueMemory.NewQueue(cfg.Crawler.GlobalQueueDepth).WithMetrics(meters)
-	hasher := sha256.New()
-	clock := system.New()
-	idGen := uuid.NewUUIDGenerator()
-	detect := detector.NewHeuristic(cfg.Headless.PromotionThresh)
-	probeFetcher := collyfetcher.New(collyfetcher.Config{
-		UserAgent:     cfg.Crawler.UserAgent,
-		RespectRobots: !cfg.Crawler.IgnoreRobots,
-		Timeout:       time.Duration(cfg.HTTP.TimeoutSeconds) * time.Second,
-	})
-	var headless crawler.Fetcher
-	if cfg.Headless.Enabled {
-		headlessFetcher, err := headlessfetcher.NewChromedp(headlessfetcher.Config{
-			MaxParallel:       cfg.Headless.MaxParallel,
-			UserAgent:         cfg.Crawler.UserAgent,
-			NavigationTimeout: time.Duration(cfg.Headless.NavTimeoutSec) * time.Second,
-		})
-		if err != nil {
-			logger.Warn("headless fetcher init failed", zap.Error(err))
+	if err := app.Run(context.Background()); err != nil {
+		// The logger should be initialized within the app, but as a fallback.
+		if logger, err := zap.NewProduction(); err == nil {
+			logger.Fatal("application runtime error", zap.Error(err))
 		} else {
-			headless = headlessFetcher
+			fmt.Fprintf(os.Stderr, "application runtime error: %v\n", err)
 		}
+		os.Exit(1)
 	}
-
-	workerCfg := worker.Config{
-		ContentType: cfg.Storage.ContentType,
-		BlobPrefix:  cfg.Storage.Prefix,
-		Topic:       cfg.PubSub.TopicName,
-	}
-
-	var workers []*worker.Worker
-	for i := 0; i < cfg.Crawler.Concurrency; i++ {
-		workers = append(workers, worker.New(
-			queue,
-			jobStore,
-			blobStore,
-			retrievalStore,
-			publisher,
-			hasher,
-			clock,
-			probeFetcher,
-			headless,
-			detect,
-			nil,
-			idGen,
-			progressEmitter,
-			workerCfg,
-			logger.Named("worker").With(zap.Int("index", i)),
-			meters,
-		))
-	}
-	dispatch := dispatcher.New(queue, workers)
-
-	apiServer := api.NewServer(jobStore, dispatch, idGen, clock, cfg, meters, logger.Named("api"), progressRepo)
-
-	srv := &http.Server{
-		Addr:              fmt.Sprintf(":%d", cfg.Server.Port),
-		Handler:           apiServer.Handler(),
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-
-	go func() {
-		logger.Info("dispatcher started")
-		dispatch.Run(ctx)
-	}()
-
-	go func() {
-		logger.Info("http server started", zap.Int("port", cfg.Server.Port))
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Error("http server error", zap.Error(err))
-			stop()
-		}
-	}()
-
-	<-ctx.Done()
-	logger.Info("shutdown initiated")
-
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		logger.Error("server shutdown error", zap.Error(err))
-	}
-	queue.Close()
-	if progressHub != nil {
-		if err := progressHub.Close(shutdownCtx); err != nil {
-			logger.Warn("progress hub close failed", zap.Error(err))
-		}
-	}
-	logger.Info("shutdown complete")
 }
