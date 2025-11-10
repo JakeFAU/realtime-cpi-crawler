@@ -1,11 +1,50 @@
+# VCS
 .git
 .gitignore
-.github
-**/*.log
-*.local.yaml
-out/
-dist/
+.gitattributes
+
+# Go build/cache
+bin/
 build/
-tmp/
-.cache/
+dist/
+out/
+*.exe
+*.test
+*.out
+coverage/
+.coverage
+*.cov
+*.prof
+*.pprof
+**/*.pprof
+**/*.swp
+
+# Go mod cache metadata (local)
+$GOMOD/cache
+
+# IDEs / editors
+.vscode/
+.idea/
+*.iml
+*.code-workspace
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Compose overrides / alt Dockerfiles
+docker-compose.override.yml
+Dockerfile.dev
+
+# Node/Web (if present)
 node_modules/
+npm-debug.log
+yarn.lock
+pnpm-lock.yaml
+
+# Python (if present)
+__pycache__/
+*.pyc
+*.pyo
+.env
+.venv

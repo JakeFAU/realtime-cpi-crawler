@@ -19,7 +19,6 @@ type Config struct {
 	HTTP         HTTPConfig                       `mapstructure:"http"`
 	Headless     HeadlessConfig                   `mapstructure:"headless"`
 	Storage      StorageConfig                    `mapstructure:"storage"`
-	DB           DBConfig                         `mapstructure:"db"`
 	PubSub       PubSubConfig                     `mapstructure:"pubsub"`
 	Logging      LoggingConfig                    `mapstructure:"logging"`
 	StandardJobs map[string]crawler.JobParameters `mapstructure:"standard_jobs"`
@@ -39,9 +38,7 @@ type AuthConfig struct {
 // CrawlerConfig governs dispatcher and crawl pipeline behavior.
 type CrawlerConfig struct {
 	Concurrency      int    `mapstructure:"concurrency"`
-	PerDomainMax     int    `mapstructure:"per_domain_max"`
 	UserAgent        string `mapstructure:"user_agent"`
-	DelaySeconds     int    `mapstructure:"delay_seconds"`
 	IgnoreRobots     bool   `mapstructure:"ignore_robots"`
 	MaxDepthDefault  int    `mapstructure:"max_depth_default"`
 	MaxPagesDefault  int    `mapstructure:"max_pages_default"`
@@ -50,10 +47,7 @@ type CrawlerConfig struct {
 
 // HTTPConfig configures HTTP client retry behavior.
 type HTTPConfig struct {
-	TimeoutSeconds   int `mapstructure:"timeout_seconds"`
-	MaxRetries       int `mapstructure:"max_retries"`
-	BackoffInitialMs int `mapstructure:"backoff_initial_ms"`
-	BackoffMaxMs     int `mapstructure:"backoff_max_ms"`
+	TimeoutSeconds int `mapstructure:"timeout_seconds"`
 }
 
 // HeadlessConfig configures the headless rendering subsystem.
@@ -66,21 +60,12 @@ type HeadlessConfig struct {
 
 // StorageConfig sets paths and content types for blob persistence.
 type StorageConfig struct {
-	GCSBucket   string `mapstructure:"gcs_bucket"`
 	Prefix      string `mapstructure:"prefix"`
 	ContentType string `mapstructure:"content_type"`
 }
 
-// DBConfig controls access to the relational database.
-type DBConfig struct {
-	DSN          string `mapstructure:"dsn"`
-	MaxOpenConns int    `mapstructure:"max_open_conns"`
-	MaxIdleConns int    `mapstructure:"max_idle_conns"`
-}
-
 // PubSubConfig holds metadata for publish-subscribe notifications.
 type PubSubConfig struct {
-	ProjectID string `mapstructure:"project_id"`
 	TopicName string `mapstructure:"topic_name"`
 }
 
@@ -120,21 +105,16 @@ func Load(path string) (Config, error) {
 func setDefaults(v *viper.Viper) {
 	v.SetDefault("server.port", 8080)
 	v.SetDefault("crawler.concurrency", 4)
-	v.SetDefault("crawler.per_domain_max", 2)
 	v.SetDefault("crawler.user_agent", "real-cpi-bot/0.1")
-	v.SetDefault("crawler.delay_seconds", 1)
 	v.SetDefault("crawler.ignore_robots", false)
 	v.SetDefault("crawler.max_depth_default", 1)
 	v.SetDefault("crawler.max_pages_default", 10)
 	v.SetDefault("crawler.queue_depth", 64)
 	v.SetDefault("http.timeout_seconds", 15)
-	v.SetDefault("http.max_retries", 2)
-	v.SetDefault("http.backoff_initial_ms", 250)
-	v.SetDefault("http.backoff_max_ms", 2000)
 	v.SetDefault("headless.enabled", false)
 	v.SetDefault("headless.max_parallel", 1)
 	v.SetDefault("headless.nav_timeout_seconds", 25)
-	v.SetDefault("headless.promotion_threshold", 60)
+	v.SetDefault("headless.promotion_threshold", 2048)
 	v.SetDefault("storage.prefix", "pages")
 	v.SetDefault("storage.content_type", "text/html; charset=utf-8")
 	v.SetDefault("logging.development", true)
@@ -147,6 +127,15 @@ func (c Config) Validate() error {
 	}
 	if c.Crawler.Concurrency <= 0 {
 		return fmt.Errorf("crawler.concurrency must be > 0")
+	}
+	if c.Crawler.GlobalQueueDepth <= 0 {
+		return fmt.Errorf("crawler.queue_depth must be > 0")
+	}
+	if c.Crawler.MaxDepthDefault < 0 {
+		return fmt.Errorf("crawler.max_depth_default must be >= 0")
+	}
+	if c.Crawler.MaxPagesDefault <= 0 {
+		return fmt.Errorf("crawler.max_pages_default must be > 0")
 	}
 	if c.HTTP.TimeoutSeconds <= 0 {
 		return fmt.Errorf("http.timeout_seconds must be > 0")
