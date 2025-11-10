@@ -18,7 +18,7 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.25.4"
+          go-version: "1.25"
 
       - name: Install gomarkdoc
         run: go install github.com/princjef/gomarkdoc/cmd/gomarkdoc@latest
@@ -28,7 +28,7 @@ jobs:
           rm -rf _site
           mkdir -p _site
           # Per-package docs under _site/, plus a top-level index
-          gomarkdoc ./... --output "_site/{{.PackageName}}/README.md"
+          gomarkdoc ./... --output "_site/{{.Dir}}/README.md"
           # Make a simple landing page
           cat > _site/index.md <<'EOF'
           # realtime-cpi-crawler — API Docs
