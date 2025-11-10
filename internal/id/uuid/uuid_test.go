@@ -31,7 +31,7 @@ func TestGeneratorNewV4ID(t *testing.T) {
 	gen := NewUUIDGenerator()
 	id1, err := gen.NewRawV4ID()
 	if err != nil {
-		t.Fatalf("NewRawID() error = %v", err)
+		t.Fatalf("NewRawV4ID() error = %v", err)
 	}
 	id2, err := gen.NewRawV4ID()
 	if err != nil {
