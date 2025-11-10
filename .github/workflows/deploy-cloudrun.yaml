@@ -132,13 +132,13 @@ jobs:
             --region "${{ env.GCP_REGION }}" \
             --image "$IMAGE" \
             --platform managed \
-            --allow-unauthenticated \
             --max-instances 20 \
             --memory 1Gi \
             --cpu 1 \
             --timeout 60s \
             --set-env-vars "GO_ENV=production" \
             --quiet
+            --service-account main-sa-account@realtime-cpi.iam.gserviceaccount.com
 
           URL=$(gcloud run services describe "${{ env.SERVICE_NAME }}" --region "${{ env.GCP_REGION }}" --format='value(status.url)')
           echo "url=$URL" >> "$GITHUB_OUTPUT"
