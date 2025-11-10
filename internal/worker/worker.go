@@ -160,7 +160,8 @@ func (w *Worker) buildBlobPath(ts time.Time, host, pageID string) string {
 	prefix := strings.Trim(w.cfg.BlobPrefix, "/")
 	hostSegment := fmt.Sprintf("host=%s", sanitizeHost(host))
 	idSegment := fmt.Sprintf("id=%s", pageID)
-	base := path.Join(ts.Format("200601"), ts.Format("02"), ts.Format("15"), hostSegment, idSegment)
+	datePath := ts.Format("200601") + "/" + ts.Format("02") + "/" + ts.Format("15")
+	base := datePath + "/" + hostSegment + "/" + idSegment
 	if prefix == "" {
 		return base
 	}
