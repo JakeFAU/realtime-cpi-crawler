@@ -20,6 +20,12 @@ type BlobStore interface {
 	PutObject(ctx context.Context, path string, contentType string, data []byte) (string, error)
 }
 
+// RetrievalStore writes normalized retrieval rows to a downstream database.
+type RetrievalStore interface {
+	StoreRetrieval(ctx context.Context, record RetrievalRecord) error
+	Close() error
+}
+
 // Publisher pushes completion events to Pub/Sub (or similar).
 type Publisher interface {
 	Publish(ctx context.Context, topic string, payload any) (string, error)

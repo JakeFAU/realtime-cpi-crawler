@@ -19,6 +19,7 @@ type Config struct {
 	HTTP         HTTPConfig                       `mapstructure:"http"`
 	Headless     HeadlessConfig                   `mapstructure:"headless"`
 	Storage      StorageConfig                    `mapstructure:"storage"`
+	Database     DatabaseConfig                   `mapstructure:"database"`
 	PubSub       PubSubConfig                     `mapstructure:"pubsub"`
 	Logging      LoggingConfig                    `mapstructure:"logging"`
 	StandardJobs map[string]crawler.JobParameters `mapstructure:"standard_jobs"`
@@ -60,13 +61,25 @@ type HeadlessConfig struct {
 
 // StorageConfig sets paths and content types for blob persistence.
 type StorageConfig struct {
+	Backend     string `mapstructure:"backend"`
+	Bucket      string `mapstructure:"bucket"`
 	Prefix      string `mapstructure:"prefix"`
 	ContentType string `mapstructure:"content_type"`
+}
+
+// DatabaseConfig controls Postgres connectivity for retrieval persistence.
+type DatabaseConfig struct {
+	DSN             string        `mapstructure:"dsn"`
+	Table           string        `mapstructure:"table"`
+	MaxConns        int32         `mapstructure:"max_conns"`
+	MinConns        int32         `mapstructure:"min_conns"`
+	MaxConnLifetime time.Duration `mapstructure:"max_conn_lifetime"`
 }
 
 // PubSubConfig holds metadata for publish-subscribe notifications.
 type PubSubConfig struct {
 	TopicName string `mapstructure:"topic_name"`
+	ProjectID string `mapstructure:"project_id"`
 }
 
 // LoggingConfig toggles zap development features.
@@ -115,12 +128,16 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("headless.max_parallel", 1)
 	v.SetDefault("headless.nav_timeout_seconds", 25)
 	v.SetDefault("headless.promotion_threshold", 2048)
-	v.SetDefault("storage.prefix", "pages")
+	v.SetDefault("storage.backend", "memory")
+	v.SetDefault("storage.prefix", "crawl")
 	v.SetDefault("storage.content_type", "text/html; charset=utf-8")
+	v.SetDefault("database.table", "retrievals")
 	v.SetDefault("logging.development", true)
 }
 
 // Validate enforces required values and reasonable limits.
+//
+//nolint:gocyclo,gocognit // reason (Configuration validation)
 func (c Config) Validate() error {
 	if c.Server.Port <= 0 {
 		return fmt.Errorf("server.port must be > 0")
@@ -145,6 +162,21 @@ func (c Config) Validate() error {
 	}
 	if c.Auth.Enabled && c.Auth.APIKey == "" {
 		return fmt.Errorf("auth.api_key must be set when auth is enabled")
+	}
+	switch c.Storage.Backend {
+	case "memory":
+	case "gcs":
+		if strings.TrimSpace(c.Storage.Bucket) == "" {
+			return fmt.Errorf("storage.bucket must be set when storage.backend is gcs")
+		}
+	default:
+		return fmt.Errorf("storage.backend must be either memory or gcs")
+	}
+	if c.Database.DSN != "" && strings.TrimSpace(c.Database.Table) == "" {
+		return fmt.Errorf("database.table must be set when database.dsn is provided")
+	}
+	if c.PubSub.TopicName != "" && strings.TrimSpace(c.PubSub.ProjectID) == "" {
+		return fmt.Errorf("pubsub.project_id must be set when pubsub.topic_name is configured")
 	}
 	return nil
 }

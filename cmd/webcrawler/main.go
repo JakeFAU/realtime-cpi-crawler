@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"time"
 
+	"cloud.google.com/go/pubsub"
+	"cloud.google.com/go/storage"
 	"go.uber.org/zap"
 
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/api"
@@ -27,11 +29,15 @@ import (
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/logging"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/metrics"
 	memorypublisher "github.com/JakeFAU/realtime-cpi-crawler/internal/publisher/memory"
+	gcppublisher "github.com/JakeFAU/realtime-cpi-crawler/internal/publisher/pubsub"
 	queueMemory "github.com/JakeFAU/realtime-cpi-crawler/internal/queue/memory"
+	gcsstorage "github.com/JakeFAU/realtime-cpi-crawler/internal/storage/gcs"
 	memoryStorage "github.com/JakeFAU/realtime-cpi-crawler/internal/storage/memory"
+	pgstore "github.com/JakeFAU/realtime-cpi-crawler/internal/storage/postgres"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/worker"
 )
 
+//nolint:gocyclo,gocognit // reason (main configuration and setup)
 func main() {
 	cfgPath := flag.String("config", "", "Path to config file")
 	flag.Parse()
@@ -57,13 +63,74 @@ func main() {
 	defer stop()
 
 	jobStore := memoryStorage.NewJobStore()
-	blobStore := memoryStorage.NewBlobStore()
-	publisher := memorypublisher.New()
+	var blobStore crawler.BlobStore
+	var storageClient *storage.Client
+	switch cfg.Storage.Backend {
+	case "gcs":
+		storageClient, err = storage.NewClient(ctx)
+		if err != nil {
+			logger.Fatal("gcs client init failed", zap.Error(err))
+		}
+		defer func() {
+			if closeErr := storageClient.Close(); closeErr != nil {
+				logger.Warn("gcs client close failed", zap.Error(closeErr))
+			}
+		}()
+		blobStore, err = gcsstorage.New(storageClient, gcsstorage.Config{
+			Bucket: cfg.Storage.Bucket,
+		})
+		if err != nil {
+			logger.Fatal("gcs blob store init failed", zap.Error(err))
+		}
+	default:
+		blobStore = memoryStorage.NewBlobStore()
+	}
+	var retrievalStore crawler.RetrievalStore
+	if cfg.Database.DSN != "" {
+		retrievalStore, err = pgstore.NewRetrievalStore(ctx, pgstore.RetrievalStoreConfig{
+			DSN:             cfg.Database.DSN,
+			Table:           cfg.Database.Table,
+			MaxConns:        cfg.Database.MaxConns,
+			MinConns:        cfg.Database.MinConns,
+			MaxConnLifetime: cfg.Database.MaxConnLifetime,
+		})
+		if err != nil {
+			logger.Fatal("retrieval store init failed", zap.Error(err))
+		}
+		defer func() {
+			if closeErr := retrievalStore.Close(); closeErr != nil {
+				logger.Warn("retrieval store close failed", zap.Error(closeErr))
+			}
+		}()
+	}
+	var publisher crawler.Publisher
+	var pubsubClient *pubsub.Client
+	var pubsubTopic *pubsub.Topic
+	if cfg.PubSub.TopicName != "" && cfg.PubSub.ProjectID != "" {
+		pubsubClient, err = pubsub.NewClient(ctx, cfg.PubSub.ProjectID)
+		if err != nil {
+			logger.Fatal("pubsub client init failed", zap.Error(err))
+		}
+		pubsubTopic = pubsubClient.Topic(cfg.PubSub.TopicName)
+		publisher = gcppublisher.New(pubsubTopic)
+	} else {
+		publisher = memorypublisher.New()
+	}
+	defer func() {
+		if pubsubTopic != nil {
+			pubsubTopic.Stop()
+		}
+		if pubsubClient != nil {
+			if closeErr := pubsubClient.Close(); closeErr != nil {
+				logger.Warn("pubsub client close failed", zap.Error(closeErr))
+			}
+		}
+	}()
 	meters := metrics.New()
 	queue := queueMemory.NewQueue(cfg.Crawler.GlobalQueueDepth).WithMetrics(meters)
 	hasher := sha256.New()
 	clock := system.New()
-	idGen := uuid.New()
+	idGen := uuid.NewUUIDGenerator()
 	detect := detector.NewHeuristic(cfg.Headless.PromotionThresh)
 	probeFetcher := collyfetcher.New(collyfetcher.Config{
 		UserAgent:     cfg.Crawler.UserAgent,
@@ -96,6 +163,7 @@ func main() {
 			queue,
 			jobStore,
 			blobStore,
+			retrievalStore,
 			publisher,
 			hasher,
 			clock,
@@ -103,6 +171,7 @@ func main() {
 			headless,
 			detect,
 			nil,
+			idGen,
 			workerCfg,
 			logger.Named("worker").With(zap.Int("index", i)),
 			meters,

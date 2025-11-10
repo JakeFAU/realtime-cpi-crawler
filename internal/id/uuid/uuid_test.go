@@ -4,14 +4,48 @@ package uuid
 import (
 	"testing"
 
-	goUUID "github.com/google/uuid"
+	"github.com/google/uuid"
 )
 
 // TestGeneratorNewID ensures generated IDs are unique and valid UUIDs.
 func TestGeneratorNewID(t *testing.T) {
 	t.Parallel()
 
-	gen := New()
+	gen := NewUUIDGenerator()
+	id1, err := gen.NewRawID()
+	if err != nil {
+		t.Fatalf("NewRawID() error = %v", err)
+	}
+	id2, err := gen.NewRawID()
+	if err != nil {
+		t.Fatalf("NewRawID() error = %v", err)
+	}
+	if id1 == id2 {
+		t.Fatalf("expected unique IDs, got %s and %s", id1, id2)
+	}
+}
+
+func TestGeneratorNewV4ID(t *testing.T) {
+	t.Parallel()
+
+	gen := NewUUIDGenerator()
+	id1, err := gen.NewRawV4ID()
+	if err != nil {
+		t.Fatalf("NewRawV4ID() error = %v", err)
+	}
+	id2, err := gen.NewRawV4ID()
+	if err != nil {
+		t.Fatalf("NewRawV4ID() error = %v", err)
+	}
+	if id1 == id2 {
+		t.Fatalf("expected unique IDs, got %s and %s", id1, id2)
+	}
+}
+
+func TestGeneratorNewStringID(t *testing.T) {
+	t.Parallel()
+
+	gen := NewUUIDGenerator()
 	id1, err := gen.NewID()
 	if err != nil {
 		t.Fatalf("NewID() error = %v", err)
@@ -23,10 +57,39 @@ func TestGeneratorNewID(t *testing.T) {
 	if id1 == id2 {
 		t.Fatalf("expected unique IDs, got %s and %s", id1, id2)
 	}
-	if _, err := goUUID.Parse(id1); err != nil {
-		t.Fatalf("id1 not valid UUID: %v", err)
+	// Validate UUID format
+	_, err = uuid.Parse(id1)
+	if err != nil {
+		t.Fatalf("NewID() returned invalid UUID: %s", id1)
 	}
-	if _, err := goUUID.Parse(id2); err != nil {
-		t.Fatalf("id2 not valid UUID: %v", err)
+	_, err = uuid.Parse(id2)
+	if err != nil {
+		t.Fatalf("NewID() returned invalid UUID: %s", id2)
+	}
+}
+
+func TestGeneratorNewStringV4ID(t *testing.T) {
+	t.Parallel()
+
+	gen := NewUUIDGenerator()
+	id1, err := gen.NewV4ID()
+	if err != nil {
+		t.Fatalf("NewV4ID() error = %v", err)
+	}
+	id2, err := gen.NewV4ID()
+	if err != nil {
+		t.Fatalf("NewV4ID() error = %v", err)
+	}
+	if id1 == id2 {
+		t.Fatalf("expected unique IDs, got %s and %s", id1, id2)
+	}
+	// Validate UUID format
+	_, err = uuid.Parse(id1)
+	if err != nil {
+		t.Fatalf("NewV4ID() returned invalid UUID: %s", id1)
+	}
+	_, err = uuid.Parse(id2)
+	if err != nil {
+		t.Fatalf("NewV4ID() returned invalid UUID: %s", id2)
 	}
 }

@@ -10,6 +10,8 @@ import (
 )
 
 // TestLoadWithFileOverrides confirms file overrides and defaults merge correctly.
+//
+//nolint:gocyclo,gocognit // reason (test configuration loading)
 func TestLoadWithFileOverrides(t *testing.T) {
 	t.Parallel()
 
@@ -36,11 +38,17 @@ headless:
   nav_timeout_seconds: 30
   promotion_threshold: 70
 storage:
+  backend: gcs
+  bucket: crawler
   prefix: logs
   content_type: text/plain
+database:
+  dsn: postgres://user:pass@127.0.0.1/db
+  table: retrievals
 logging:
   development: false
 pubsub:
+  project_id: my-project
   topic_name: topic
 standard_jobs:
   price-refresh:
@@ -66,6 +74,12 @@ standard_jobs:
 	if cfg.Crawler.Concurrency != 6 || cfg.Crawler.IgnoreRobots != true {
 		t.Fatalf("expected crawler overrides to apply")
 	}
+	if cfg.Storage.Backend != "gcs" || cfg.Storage.Bucket != "crawler" {
+		t.Fatalf("expected gcs storage config, got %+v", cfg.Storage)
+	}
+	if cfg.Database.DSN == "" || cfg.Database.Table != "retrievals" {
+		t.Fatalf("expected database config to load, got %+v", cfg.Database)
+	}
 	job, ok := cfg.StandardJobs["price-refresh"]
 	if !ok || len(job.URLs) != 1 || job.URLs[0] != "https://example.com" {
 		t.Fatalf("expected standard job to be loaded: %+v", cfg.StandardJobs)
@@ -90,7 +104,8 @@ func TestConfigValidateErrors(t *testing.T) {
 			MaxPagesDefault:  10,
 			GlobalQueueDepth: 10,
 		},
-		HTTP: HTTPConfig{TimeoutSeconds: 10},
+		HTTP:    HTTPConfig{TimeoutSeconds: 10},
+		Storage: StorageConfig{Backend: "memory"},
 	}
 
 	tests := []struct {
@@ -170,6 +185,44 @@ func TestConfigValidateErrors(t *testing.T) {
 				return c
 			}(),
 			want: "auth.api_key",
+		},
+		{
+			name: "unknown storage backend",
+			cfg: func() Config {
+				c := base
+				c.Storage.Backend = "fs"
+				return c
+			}(),
+			want: "storage.backend",
+		},
+		{
+			name: "gcs missing bucket",
+			cfg: func() Config {
+				c := base
+				c.Storage.Backend = "gcs"
+				c.Storage.Bucket = ""
+				return c
+			}(),
+			want: "storage.bucket",
+		},
+		{
+			name: "database missing table",
+			cfg: func() Config {
+				c := base
+				c.Database.DSN = "postgres://user:pass@localhost/db"
+				c.Database.Table = ""
+				return c
+			}(),
+			want: "database.table",
+		},
+		{
+			name: "pubsub missing project",
+			cfg: func() Config {
+				c := base
+				c.PubSub.TopicName = "topic"
+				return c
+			}(),
+			want: "pubsub.project_id",
 		},
 	}
 

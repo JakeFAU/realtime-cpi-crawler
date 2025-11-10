@@ -55,6 +55,7 @@ type JobCounters struct {
 
 // PageRecord is persisted for each fetched page.
 type PageRecord struct {
+	ID           string         `json:"id,omitempty"`
 	JobID        string         `json:"job_id"`
 	URL          string         `json:"url"`
 	StatusCode   int            `json:"status_code"`
@@ -65,6 +66,23 @@ type PageRecord struct {
 	Headers      http.Header    `json:"headers"`
 	BlobURI      string         `json:"blob_uri"`
 	Metrics      map[string]int `json:"metrics,omitempty"`
+}
+
+// RetrievalRecord captures details persisted to downstream storage.
+type RetrievalRecord struct {
+	ID              string
+	JobID           string
+	URL             string
+	Hash            string
+	BlobURI         string
+	Headers         http.Header
+	StatusCode      int
+	ContentType     string
+	SizeBytes       int
+	RetrievedAt     time.Time
+	PartitionTS     time.Time
+	ParentID        *string
+	ParentTimestamp *time.Time
 }
 
 // FetchRequest captures everything needed to fetch a URL.
@@ -86,6 +104,7 @@ type FetchResponse struct {
 	Body         []byte
 	Duration     time.Duration
 	UsedHeadless bool
+	Screenshot   []byte
 }
 
 // JobResult is returned by the API result endpoint.
