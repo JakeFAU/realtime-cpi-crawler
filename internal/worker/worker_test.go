@@ -379,7 +379,7 @@ func TestWorkerBuildBlobPath(t *testing.T) {
 		t.Fatalf("unexpected blob path: %s", got)
 	}
 	w.cfg.BlobPrefix = ""
-	if got := w.buildBlobPath(ts, "", "page-1"); got != "202507/04/09/host=unknown/id=page-1" {
+	if got := w.buildBlobPath(ts, "", "page-1"); got != "202507/04/09/host=invalid-host/id=page-1" {
 		t.Fatalf("unexpected fallback blob path: %s", got)
 	}
 }

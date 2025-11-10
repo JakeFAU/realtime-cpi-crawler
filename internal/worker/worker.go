@@ -410,8 +410,11 @@ func (w *Worker) newPageID() (string, error) {
 
 func extractHost(rawURL string) string {
 	u, err := url.Parse(rawURL)
-	if err != nil || u.Host == "" {
-		return "unknown"
+	if err != nil {
+		return "invalid-url"
+	}
+	if u.Host == "" {
+		return "invalid-url"
 	}
 	return u.Host
 }
@@ -419,7 +422,7 @@ func extractHost(rawURL string) string {
 func sanitizeHost(host string) string {
 	host = strings.ToLower(strings.TrimSpace(host))
 	if host == "" {
-		return "unknown"
+		return "invalid-host"
 	}
 	var b strings.Builder
 	for _, r := range host {
@@ -438,7 +441,7 @@ func sanitizeHost(host string) string {
 	}
 	result := strings.Trim(b.String(), "-_")
 	if result == "" {
-		return "unknown"
+		return "invalid-host"
 	}
 	return result
 }
