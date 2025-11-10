@@ -42,6 +42,15 @@ pubsub:
 logging:
   development: true
 
+progress:
+  enabled: true
+  buffer_size: 4096
+  sink_timeout_ms: 2000
+  log_enabled: false
+  batch:
+    max_events: 1000
+    max_wait_ms: 500
+
 standard_jobs:
   sample:
     urls:

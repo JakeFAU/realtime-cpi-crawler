@@ -14,6 +14,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/crawler"
+	"github.com/JakeFAU/realtime-cpi-crawler/internal/progress"
 )
 
 // TestWorker_ProcessJob_SuccessFlow ensures a happy path job processes successfully.
@@ -23,9 +24,10 @@ func TestWorker_ProcessJob_SuccessFlow(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	const jobUUID = "11111111-1111-1111-1111-111111111111"
 	queue := &fakeQueue{
 		items: []crawler.QueueItem{{
-			JobID: "job-success",
+			JobID: jobUUID,
 			Params: crawler.JobParameters{
 				URLs: []string{"https://example.com"},
 			},
@@ -48,6 +50,7 @@ func TestWorker_ProcessJob_SuccessFlow(t *testing.T) {
 		},
 	}
 	idGen := &fakeIDGen{ids: []string{"page-success"}}
+	emitter := &fakeProgressEmitter{}
 
 	w := New(
 		queue,
@@ -62,6 +65,7 @@ func TestWorker_ProcessJob_SuccessFlow(t *testing.T) {
 		nil,
 		nil,
 		idGen,
+		emitter,
 		Config{
 			ContentType: "text/html",
 			BlobPrefix:  "crawl",
@@ -86,6 +90,9 @@ func TestWorker_ProcessJob_SuccessFlow(t *testing.T) {
 	require.Equal(t, "page-success", publisher.messages[0]["page_id"])
 	require.Equal(t, crawler.JobCounters{PagesSucceeded: 1}, jobStore.lastCounters())
 	require.Len(t, retrievalStore.records(), 1)
+	require.Equal(t, 1, emitter.count(progress.StageJobStart))
+	require.Equal(t, 1, emitter.count(progress.StageFetchDone))
+	require.Equal(t, 1, emitter.count(progress.StageJobDone))
 	cancel()
 }
 
@@ -135,6 +142,7 @@ func TestWorker_ProcessJob_PublishFailureMarksJobFailed(t *testing.T) {
 		nil,
 		nil,
 		idGen,
+		nil,
 		Config{
 			ContentType: "text/html",
 			BlobPrefix:  "pages",
@@ -212,6 +220,7 @@ func TestWorker_ProcessJob_HeadlessPromotionApplied(t *testing.T) {
 		detector,
 		nil,
 		idGen,
+		nil,
 		Config{
 			ContentType: "text/html",
 			BlobPrefix:  "pages",
@@ -279,6 +288,7 @@ func TestWorker_ProcessJob_RetrievalStoreFailure(t *testing.T) {
 		nil,
 		nil,
 		idGen,
+		nil,
 		Config{
 			ContentType: "text/html",
 			BlobPrefix:  "pages",
@@ -335,6 +345,29 @@ type fakeJobStore struct {
 	pages    []crawler.PageRecord
 }
 
+type fakeProgressEmitter struct {
+	mu     sync.Mutex
+	events []progress.Event
+}
+
+func (f *fakeProgressEmitter) Emit(evt progress.Event) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.events = append(f.events, evt)
+}
+
+func (f *fakeProgressEmitter) count(stage progress.Stage) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	total := 0
+	for _, evt := range f.events {
+		if evt.Stage == stage {
+			total++
+		}
+	}
+	return total
+}
+
 type statusUpdate struct {
 	status   crawler.JobStatus
 	errText  string
@@ -374,7 +407,24 @@ func TestWorkerBuildBlobPath(t *testing.T) {
 	t.Parallel()
 
 	ts := time.Date(2025, time.July, 4, 9, 0, 0, 0, time.UTC)
-	w := New(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, Config{BlobPrefix: "/crawl/"}, zap.NewNop(), nil)
+	w := New(
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		Config{BlobPrefix: "/crawl/"},
+		zap.NewNop(),
+		nil,
+	)
 	if got := w.buildBlobPath(ts, "Example.com", "page-1"); got != "crawl/202507/04/09/host=example.com/id=page-1" {
 		t.Fatalf("unexpected blob path: %s", got)
 	}
@@ -388,7 +438,7 @@ func TestWorkerBuildBlobPath(t *testing.T) {
 func TestWorkerAllowHelpers(t *testing.T) {
 	t.Parallel()
 
-	w := New(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, Config{}, zap.NewNop(), nil)
+	w := New(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, Config{}, zap.NewNop(), nil)
 	if !w.allowFetch("job", "url", 0) || !w.allowHeadless("job", "url", 0) {
 		t.Fatal("expected allows with nil policy")
 	}

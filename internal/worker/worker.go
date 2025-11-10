@@ -11,11 +11,13 @@ import (
 	"strings"
 	"time"
 
+	goUUID "github.com/google/uuid"
 	"go.uber.org/zap"
 
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/crawler"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/id/uuid"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/metrics"
+	"github.com/JakeFAU/realtime-cpi-crawler/internal/progress"
 )
 
 // Config controls Worker behavior.
@@ -42,6 +44,7 @@ type Worker struct {
 	cfg             Config
 	logger          *zap.Logger
 	meters          *metrics.Collectors
+	progress        progress.Emitter
 }
 
 // New constructs a Worker.
@@ -58,6 +61,7 @@ func New(
 	detector crawler.HeadlessDetector,
 	policy crawler.Policy,
 	idGen crawler.IDGenerator,
+	progressEmitter progress.Emitter,
 	cfg Config,
 	logger *zap.Logger,
 	meters *metrics.Collectors,
@@ -84,6 +88,7 @@ func New(
 		cfg:             cfg,
 		logger:          logger,
 		meters:          meters,
+		progress:        progressEmitter,
 	}
 }
 
@@ -104,17 +109,25 @@ func (w *Worker) Run(ctx context.Context) {
 }
 
 func (w *Worker) processJob(ctx context.Context, item crawler.QueueItem) {
-	start := time.Now()
+	start := w.now()
+	jobUUID, hasUUID := w.parseJobUUID(item.JobID)
+	if hasUUID {
+		w.emitEvent(jobUUID, progress.StageJobStart, nil)
+	}
 	if w.probeFetcher == nil {
 		w.logger.Error("no probe fetcher configured", zap.String("job_id", item.JobID))
+		failMsg := "no probe fetcher configured"
 		if err := w.jobStore.UpdateJobStatus(
 			ctx,
 			item.JobID,
 			crawler.JobStatusFailed,
-			"no probe fetcher configured",
+			failMsg,
 			crawler.JobCounters{},
 		); err != nil {
 			w.logger.Error("fail job status update", zap.String("job_id", item.JobID), zap.Error(err))
+		}
+		if hasUUID {
+			w.emitJobCompletion(jobUUID, crawler.JobStatusFailed, start, failMsg)
 		}
 		return
 	}
@@ -127,8 +140,8 @@ func (w *Worker) processJob(ctx context.Context, item crawler.QueueItem) {
 		return
 	}
 
-	for _, url := range item.Params.URLs {
-		if err := w.handleURL(ctx, item, url, &counters); err != nil {
+	for _, targetURL := range item.Params.URLs {
+		if err := w.handleURL(ctx, item, jobUUID, hasUUID, targetURL, &counters); err != nil {
 			errText = err.Error()
 		}
 	}
@@ -137,6 +150,9 @@ func (w *Worker) processJob(ctx context.Context, item crawler.QueueItem) {
 
 	if err := w.jobStore.UpdateJobStatus(ctx, item.JobID, status, errText, counters); err != nil {
 		w.logger.Error("final job status update failed", zap.String("job_id", item.JobID), zap.Error(err))
+	}
+	if hasUUID {
+		w.emitJobCompletion(jobUUID, status, start, errText)
 	}
 	w.recordJobFinish(status, start)
 }
@@ -171,38 +187,43 @@ func (w *Worker) buildBlobPath(ts time.Time, host, pageID string) string {
 func (w *Worker) handleURL(
 	ctx context.Context,
 	item crawler.QueueItem,
-	url string,
+	jobUUID goUUID.UUID,
+	hasUUID bool,
+	targetURL string,
 	counters *crawler.JobCounters,
 ) error {
-	if !w.allowFetch(item.JobID, url, 0) {
-		w.logger.Warn("fetch blocked by policy", zap.String("job_id", item.JobID), zap.String("url", url))
+	if !w.allowFetch(item.JobID, targetURL, 0) {
+		w.logger.Warn("fetch blocked by policy", zap.String("job_id", item.JobID), zap.String("url", targetURL))
 		return nil
 	}
 
-	resp, err := w.fetchProbe(ctx, item, url)
+	resp, err := w.fetchProbe(ctx, item, targetURL)
 	if err != nil {
 		counters.PagesFailed++
-		w.logger.Error("probe fetch failed", zap.String("job_id", item.JobID), zap.String("url", url), zap.Error(err))
+		w.logger.Error("probe fetch failed", zap.String("job_id", item.JobID), zap.String("url", targetURL), zap.Error(err))
 		return err
 	}
-	w.logger.Debug("probe fetch succeeded", zap.String("job_id", item.JobID), zap.String("url", url))
+	w.logger.Debug("probe fetch succeeded", zap.String("job_id", item.JobID), zap.String("url", targetURL))
 
 	finalResp := resp
-	if promotedResp, promoted := w.maybePromote(ctx, item, url, resp); promoted {
+	if promotedResp, promoted := w.maybePromote(ctx, item, targetURL, resp); promoted {
 		finalResp = promotedResp
-		w.logger.Info("headless promotion applied", zap.String("job_id", item.JobID), zap.String("url", url))
+		w.logger.Info("headless promotion applied", zap.String("job_id", item.JobID), zap.String("url", targetURL))
 	}
 
-	if err := w.persistAndPublish(ctx, item.JobID, url, finalResp); err != nil {
+	if err := w.persistAndPublish(ctx, item.JobID, targetURL, finalResp); err != nil {
 		counters.PagesFailed++
-		w.logger.Error("persist page failed", zap.String("job_id", item.JobID), zap.String("url", url), zap.Error(err))
+		w.logger.Error("persist page failed", zap.String("job_id", item.JobID), zap.String("url", targetURL), zap.Error(err))
 		w.recordPage(false, finalResp.UsedHeadless, finalResp.StatusCode, finalResp.Duration)
 		return err
 	}
 
 	counters.PagesSucceeded++
-	w.logger.Debug("page processed", zap.String("job_id", item.JobID), zap.String("url", url))
+	w.logger.Debug("page processed", zap.String("job_id", item.JobID), zap.String("url", targetURL))
 	w.recordPage(true, finalResp.UsedHeadless, finalResp.StatusCode, finalResp.Duration)
+	if hasUUID {
+		w.emitFetchEvent(jobUUID, targetURL, finalResp)
+	}
 	return nil
 }
 
@@ -465,6 +486,76 @@ func (w *Worker) storeRetrieval(ctx context.Context, page crawler.PageRecord, co
 		return fmt.Errorf("store retrieval: %w", err)
 	}
 	return nil
+}
+
+func (w *Worker) parseJobUUID(jobID string) (goUUID.UUID, bool) {
+	if jobID == "" {
+		return goUUID.UUID{}, false
+	}
+	id, err := goUUID.Parse(jobID)
+	if err != nil {
+		w.logger.Debug("job id is not a uuid", zap.String("job_id", jobID), zap.Error(err))
+		return goUUID.UUID{}, false
+	}
+	return id, true
+}
+
+func (w *Worker) emitJobCompletion(jobUUID goUUID.UUID, status crawler.JobStatus, started time.Time, note string) {
+	stage := stageFromStatus(status)
+	if stage == "" {
+		return
+	}
+	w.emitEvent(jobUUID, stage, func(evt *progress.Event) {
+		evt.Dur = w.now().Sub(started)
+		if note != "" {
+			evt.Note = note
+		}
+	})
+}
+
+func (w *Worker) emitFetchEvent(jobUUID goUUID.UUID, url string, resp crawler.FetchResponse) {
+	site := extractHost(url)
+	w.emitEvent(jobUUID, progress.StageFetchDone, func(evt *progress.Event) {
+		evt.Site = site
+		evt.URL = url
+		evt.Bytes = int64(len(resp.Body))
+		evt.Visits = 1
+		evt.StatusClass = progress.ClassifyStatus(resp.StatusCode)
+		evt.Dur = resp.Duration
+	})
+}
+
+func (w *Worker) emitEvent(jobUUID goUUID.UUID, stage progress.Stage, mutate func(*progress.Event)) {
+	if w.progress == nil || stage == "" || jobUUID == (goUUID.UUID{}) {
+		return
+	}
+	evt := progress.Event{
+		JobID: progress.UUIDToBytes(jobUUID),
+		TS:    w.now(),
+		Stage: stage,
+	}
+	if mutate != nil {
+		mutate(&evt)
+	}
+	w.progress.Emit(evt)
+}
+
+func stageFromStatus(status crawler.JobStatus) progress.Stage {
+	switch status {
+	case crawler.JobStatusSucceeded:
+		return progress.StageJobDone
+	case crawler.JobStatusFailed, crawler.JobStatusCanceled:
+		return progress.StageJobError
+	default:
+		return ""
+	}
+}
+
+func (w *Worker) now() time.Time {
+	if w.clock != nil {
+		return w.clock.Now()
+	}
+	return time.Now().UTC()
 }
 
 func contentTypeFromResponse(resp crawler.FetchResponse, fallback string) string {

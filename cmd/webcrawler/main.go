@@ -28,12 +28,15 @@ import (
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/id/uuid"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/logging"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/metrics"
+	"github.com/JakeFAU/realtime-cpi-crawler/internal/progress"
+	progresssinks "github.com/JakeFAU/realtime-cpi-crawler/internal/progress/sinks"
 	memorypublisher "github.com/JakeFAU/realtime-cpi-crawler/internal/publisher/memory"
 	gcppublisher "github.com/JakeFAU/realtime-cpi-crawler/internal/publisher/pubsub"
 	queueMemory "github.com/JakeFAU/realtime-cpi-crawler/internal/queue/memory"
 	gcsstorage "github.com/JakeFAU/realtime-cpi-crawler/internal/storage/gcs"
 	memoryStorage "github.com/JakeFAU/realtime-cpi-crawler/internal/storage/memory"
 	pgstore "github.com/JakeFAU/realtime-cpi-crawler/internal/storage/postgres"
+	"github.com/JakeFAU/realtime-cpi-crawler/internal/store"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/worker"
 )
 
@@ -103,6 +106,7 @@ func main() {
 			}
 		}()
 	}
+	var progressRepo store.ProgressRepository
 	var publisher crawler.Publisher
 	var pubsubClient *pubsub.Client
 	var pubsubTopic *pubsub.Topic
@@ -127,6 +131,37 @@ func main() {
 		}
 	}()
 	meters := metrics.New()
+	var progressHub *progress.Hub
+	var progressEmitter progress.Emitter
+	if cfg.Progress.Enabled {
+		var sinkList []progress.Sink
+		if meters != nil && meters.Registry() != nil {
+			promSink, err := progresssinks.NewPrometheusSink(meters.Registry())
+			if err != nil {
+				logger.Warn("prometheus progress sink init failed", zap.Error(err))
+			} else {
+				sinkList = append(sinkList, promSink)
+			}
+		}
+		if progressRepo != nil {
+			sinkList = append(sinkList, progresssinks.NewStoreSink(progressRepo, logger.Named("progress_store")))
+		}
+		if cfg.Progress.LogEnabled {
+			sinkList = append(sinkList, progresssinks.NewLogSink(logger.Named("progress_log")))
+		}
+		if len(sinkList) > 0 {
+			hubCfg := progress.Config{
+				BufferSize:     cfg.Progress.BufferSize,
+				MaxBatchEvents: cfg.Progress.Batch.MaxEvents,
+				MaxBatchWait:   time.Duration(cfg.Progress.Batch.MaxWaitMs) * time.Millisecond,
+				SinkTimeout:    time.Duration(cfg.Progress.SinkTimeoutMs) * time.Millisecond,
+				BaseContext:    ctx,
+				Logger:         logger.Named("progress_hub"),
+			}
+			progressHub = progress.NewHub(hubCfg, sinkList...)
+			progressEmitter = progressHub
+		}
+	}
 	queue := queueMemory.NewQueue(cfg.Crawler.GlobalQueueDepth).WithMetrics(meters)
 	hasher := sha256.New()
 	clock := system.New()
@@ -172,6 +207,7 @@ func main() {
 			detect,
 			nil,
 			idGen,
+			progressEmitter,
 			workerCfg,
 			logger.Named("worker").With(zap.Int("index", i)),
 			meters,
@@ -179,7 +215,7 @@ func main() {
 	}
 	dispatch := dispatcher.New(queue, workers)
 
-	apiServer := api.NewServer(jobStore, dispatch, idGen, clock, cfg, meters, logger.Named("api"))
+	apiServer := api.NewServer(jobStore, dispatch, idGen, clock, cfg, meters, logger.Named("api"), progressRepo)
 
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Server.Port),
@@ -209,5 +245,10 @@ func main() {
 		logger.Error("server shutdown error", zap.Error(err))
 	}
 	queue.Close()
+	if progressHub != nil {
+		if err := progressHub.Close(shutdownCtx); err != nil {
+			logger.Warn("progress hub close failed", zap.Error(err))
+		}
+	}
 	logger.Info("shutdown complete")
 }

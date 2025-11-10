@@ -1,0 +1,148 @@
+name: Build & Deploy (Cloud Run)
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write # for Workload Identity Federation
+  packages: read
+
+env:
+  GCP_PROJECT: realtime-cpi
+  GCP_REGION: us-east4
+  GAR_REPOSITORY: crawler # Artifact Registry repo name (docker)
+  IMAGE_NAME: realtime-cpi-crawler
+  SERVICE_NAME: crawler-api # Cloud Run service name
+  # Resulting image: us-east4-docker.pkg.dev/$GCP_PROJECT/$GAR_REPOSITORY/$IMAGE_NAME:$GITHUB_SHA
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Build
+        run: go build -v ./...
+
+      - name: Test (race)
+        run: go test -race -v ./...
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=5m
+
+  build-and-push:
+    needs: [build-test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      image: ${{ steps.meta.outputs.tags }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Auth to GCP via WIF (no JSON keys)
+      - name: Auth via Workload Identity Federation
+        id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SA }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT }}
+
+      # Docker auth to Artifact Registry in region
+      - name: Configure Docker for GAR
+        run: gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev --quiet
+
+      # Standardized tags/labels for provenance
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT }}/${{ env.GAR_REPOSITORY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,enable=true,priority=100
+            type=ref,event=tag
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Layer caching to speed rebuilds
+      - name: Build & Push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false # (set true if you want SLSA provenance)
+
+  deploy:
+    needs: [build-and-push]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Auth via Workload Identity Federation
+        id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SA }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT }}
+
+      - name: Deploy to Cloud Run (managed)
+        id: deploy
+        run: |
+          IMAGE="${{ needs.build-and-push.outputs.image }}"
+          if [ -z "$IMAGE" ]; then
+            # Fall back to SHA tag if metadata-action outputs differ
+            IMAGE="${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT }}/${{ env.GAR_REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          fi
+
+          gcloud run deploy "${{ env.SERVICE_NAME }}" \
+            --project "${{ env.GCP_PROJECT }}" \
+            --region "${{ env.GCP_REGION }}" \
+            --image "$IMAGE" \
+            --platform managed \
+            --allow-unauthenticated \
+            --max-instances 20 \
+            --memory 1Gi \
+            --cpu 1 \
+            --timeout 60s \
+            --set-env-vars "GO_ENV=production" \
+            --quiet
+
+          URL=$(gcloud run services describe "${{ env.SERVICE_NAME }}" --region "${{ env.GCP_REGION }}" --format='value(status.url)')
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+    concurrency:
+      group: cloudrun-${{ github.ref }}
+      cancel-in-progress: false

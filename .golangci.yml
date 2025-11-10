@@ -59,6 +59,10 @@ linters:
     - forbidigo # Forbids specific function calls (like fmt.Print).
     - nolintlint # Checks `//nolint` directives for correctness.
 
+    # -- Documentation ---
+    - godot # Ensures comments end with a period.
+    - godox # Detects TODO/FIXME comments in code.
+
   # --- Linter-Specific Configurations ---
   settings:
     errcheck:
