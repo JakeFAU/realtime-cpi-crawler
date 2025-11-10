@@ -60,6 +60,8 @@ type HeadlessConfig struct {
 
 // StorageConfig sets paths and content types for blob persistence.
 type StorageConfig struct {
+	Backend     string `mapstructure:"backend"`
+	Bucket      string `mapstructure:"bucket"`
 	Prefix      string `mapstructure:"prefix"`
 	ContentType string `mapstructure:"content_type"`
 }
@@ -115,7 +117,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("headless.max_parallel", 1)
 	v.SetDefault("headless.nav_timeout_seconds", 25)
 	v.SetDefault("headless.promotion_threshold", 2048)
-	v.SetDefault("storage.prefix", "pages")
+	v.SetDefault("storage.backend", "memory")
+	v.SetDefault("storage.prefix", "crawl")
 	v.SetDefault("storage.content_type", "text/html; charset=utf-8")
 	v.SetDefault("logging.development", true)
 }
@@ -145,6 +148,15 @@ func (c Config) Validate() error {
 	}
 	if c.Auth.Enabled && c.Auth.APIKey == "" {
 		return fmt.Errorf("auth.api_key must be set when auth is enabled")
+	}
+	switch c.Storage.Backend {
+	case "memory":
+	case "gcs":
+		if strings.TrimSpace(c.Storage.Bucket) == "" {
+			return fmt.Errorf("storage.bucket must be set when storage.backend is gcs")
+		}
+	default:
+		return fmt.Errorf("storage.backend must be either memory or gcs")
 	}
 	return nil
 }

@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"cloud.google.com/go/storage"
 	"go.uber.org/zap"
 
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/api"
@@ -28,10 +29,12 @@ import (
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/metrics"
 	memorypublisher "github.com/JakeFAU/realtime-cpi-crawler/internal/publisher/memory"
 	queueMemory "github.com/JakeFAU/realtime-cpi-crawler/internal/queue/memory"
+	gcsstorage "github.com/JakeFAU/realtime-cpi-crawler/internal/storage/gcs"
 	memoryStorage "github.com/JakeFAU/realtime-cpi-crawler/internal/storage/memory"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/worker"
 )
 
+//gocognit:ignore
 func main() {
 	cfgPath := flag.String("config", "", "Path to config file")
 	flag.Parse()
@@ -57,13 +60,34 @@ func main() {
 	defer stop()
 
 	jobStore := memoryStorage.NewJobStore()
-	blobStore := memoryStorage.NewBlobStore()
+	var blobStore crawler.BlobStore
+	var storageClient *storage.Client
+	switch cfg.Storage.Backend {
+	case "gcs":
+		storageClient, err = storage.NewClient(ctx)
+		if err != nil {
+			logger.Fatal("gcs client init failed", zap.Error(err))
+		}
+		defer func() {
+			if closeErr := storageClient.Close(); closeErr != nil {
+				logger.Warn("gcs client close failed", zap.Error(closeErr))
+			}
+		}()
+		blobStore, err = gcsstorage.New(storageClient, gcsstorage.Config{
+			Bucket: cfg.Storage.Bucket,
+		})
+		if err != nil {
+			logger.Fatal("gcs blob store init failed", zap.Error(err))
+		}
+	default:
+		blobStore = memoryStorage.NewBlobStore()
+	}
 	publisher := memorypublisher.New()
 	meters := metrics.New()
 	queue := queueMemory.NewQueue(cfg.Crawler.GlobalQueueDepth).WithMetrics(meters)
 	hasher := sha256.New()
 	clock := system.New()
-	idGen := uuid.New()
+	idGen := uuid.NewUUIDGenerator()
 	detect := detector.NewHeuristic(cfg.Headless.PromotionThresh)
 	probeFetcher := collyfetcher.New(collyfetcher.Config{
 		UserAgent:     cfg.Crawler.UserAgent,
@@ -103,6 +127,7 @@ func main() {
 			headless,
 			detect,
 			nil,
+			idGen,
 			workerCfg,
 			logger.Named("worker").With(zap.Int("index", i)),
 			meters,

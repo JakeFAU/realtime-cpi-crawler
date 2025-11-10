@@ -82,14 +82,18 @@ headless:
 
 ```yaml
 storage:
-  prefix: "pages"
+  backend: "memory"
+  bucket: ""
+  prefix: "crawl"
   content_type: "text/html; charset=utf-8"
 
 pubsub:
   topic_name: ""
 ```
 
-- `storage.prefix` scopes blob paths (`<prefix>/<job>/<hash>.html`); leave blank to write at the root.
+- `storage.backend` picks the implementation (`memory` or `gcs`).
+- `storage.bucket` names the GCS bucket when `storage.backend = gcs`.
+- `storage.prefix` scopes blob paths (`<prefix>/crawl/...`); leave blank to write at the root.
 - `storage.content_type` is stored alongside each blob for downstream consumers.
 - `pubsub.topic_name` enables publish-on-completion; leave empty to disable publishing.
 

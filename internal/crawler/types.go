@@ -55,6 +55,7 @@ type JobCounters struct {
 
 // PageRecord is persisted for each fetched page.
 type PageRecord struct {
+	ID           string         `json:"id,omitempty"`
 	JobID        string         `json:"job_id"`
 	URL          string         `json:"url"`
 	StatusCode   int            `json:"status_code"`
@@ -86,6 +87,7 @@ type FetchResponse struct {
 	Body         []byte
 	Duration     time.Duration
 	UsedHeadless bool
+	Screenshot   []byte
 }
 
 // JobResult is returned by the API result endpoint.

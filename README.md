@@ -70,7 +70,7 @@ Configuration is merged from `config.yaml` and `CRAWLER_*` environment variables
 - `crawler.concurrency`, `crawler.queue_depth`, `crawler.user_agent`, `crawler.max_depth_default`, `crawler.max_pages_default`.
 - `http.timeout_seconds` – per-page probe budget (also used as default job budget).
 - `headless.enabled`, `headless.max_parallel`, `headless.nav_timeout_seconds`, `headless.promotion_threshold`.
-- `storage.prefix`, `storage.content_type`.
+- `storage.backend` (`memory` or `gcs`), `storage.bucket` (required for `gcs`), `storage.prefix`, `storage.content_type`.
 - `pubsub.topic_name`.
 - `logging.development` – toggles zap dev vs prod logger.
 - `standard_jobs.<name>` – canned job parameter templates.
@@ -82,7 +82,7 @@ See [`INSTRUCTIONS.md`](INSTRUCTIONS.md) for detailed operational guidance.
 ## Development Notes
 
 - Make targets are replaced by Go tooling + pre-commit hooks (`gofumpt`, `goimports`, `golangci-lint`, `go test`, `govulncheck`).
-- Memory-backed `JobStore`, `BlobStore`, and `Publisher` keep the binary dependency-free; swap in real implementations as needed.
+- Memory-backed `JobStore` and `Publisher` keep the binary dependency-free; swap in the provided GCS BlobStore and real queues/databases as needed.
 - The queue is currently in-memory FIFO; replace with a priority-aware implementation to enforce domain budgets or SLA tiers.
 - Zap logging defaults to development mode with colorized output; production mode uses JSON with timestamps and includes stack traces.
 
@@ -98,3 +98,19 @@ See [`INSTRUCTIONS.md`](INSTRUCTIONS.md) for detailed operational guidance.
 ---
 
 For more depth—including deployment, API payload details, observability, and security—read the [INSTRUCTIONS.md](INSTRUCTIONS.md).
+
+---
+
+## Storage Layout
+
+When `storage.backend` is `gcs`, raw crawl artifacts are persisted as:
+
+```
+gs://<bucket>/<prefix>/yyyymm/dd/hh/host=<host>/id=<uuid7>/
+  raw.html
+  headers.json
+  meta.json        # {url, status, size, sha256, content_type, parent_id, job_uuid}
+  screenshot.png   # optional
+```
+
+Each fetched page receives its own UUIDv7 (also recorded in the API response) so the files can be referenced from downstream databases or workers.

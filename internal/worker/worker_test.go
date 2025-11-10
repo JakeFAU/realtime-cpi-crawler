@@ -35,7 +35,7 @@ func TestWorker_ProcessJob_SuccessFlow(t *testing.T) {
 	blobStore := newFakeBlobStore()
 	publisher := newFakePublisher()
 	hasher := &fakeHasher{hash: "abc123"}
-	clock := &fakeClock{now: time.Unix(100, 0)}
+	clock := &fakeClock{now: time.Date(2025, time.January, 2, 15, 0, 0, 0, time.UTC)}
 	fetcher := &fakeFetcher{
 		responses: map[string]crawler.FetchResponse{
 			"https://example.com": {
@@ -46,6 +46,7 @@ func TestWorker_ProcessJob_SuccessFlow(t *testing.T) {
 			},
 		},
 	}
+	idGen := &fakeIDGen{ids: []string{"page-success"}}
 
 	w := New(
 		queue,
@@ -58,9 +59,10 @@ func TestWorker_ProcessJob_SuccessFlow(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		idGen,
 		Config{
 			ContentType: "text/html",
-			BlobPrefix:  "pages",
+			BlobPrefix:  "crawl",
 			Topic:       "jobs",
 		},
 		zap.NewNop(),
@@ -74,8 +76,12 @@ func TestWorker_ProcessJob_SuccessFlow(t *testing.T) {
 	}, time.Second, 10*time.Millisecond)
 
 	require.Len(t, jobStore.pages, 1)
-	require.Equal(t, "pages/job-success/abc123.html", blobStore.lastPath)
+	require.Equal(t, "page-success", jobStore.pages[0].ID)
+	require.Len(t, blobStore.paths, 3)
+	require.Equal(t, "crawl/202501/02/15/host=example.com/id=page-success/raw.html", blobStore.paths[0])
+	require.Contains(t, blobStore.objects, "crawl/202501/02/15/host=example.com/id=page-success/meta.json")
 	require.Len(t, publisher.messages, 1)
+	require.Equal(t, "page-success", publisher.messages[0]["page_id"])
 	require.Equal(t, crawler.JobCounters{PagesSucceeded: 1}, jobStore.lastCounters())
 	cancel()
 }
@@ -111,6 +117,8 @@ func TestWorker_ProcessJob_PublishFailureMarksJobFailed(t *testing.T) {
 		},
 	}
 
+	idGen := &fakeIDGen{ids: []string{"page-fail"}}
+
 	w := New(
 		queue,
 		jobStore,
@@ -122,6 +130,7 @@ func TestWorker_ProcessJob_PublishFailureMarksJobFailed(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		idGen,
 		Config{
 			ContentType: "text/html",
 			BlobPrefix:  "pages",
@@ -184,6 +193,7 @@ func TestWorker_ProcessJob_HeadlessPromotionApplied(t *testing.T) {
 		},
 	}
 	detector := &fakeDetector{promotions: map[string]bool{"https://example.com": true}}
+	idGen := &fakeIDGen{ids: []string{"page-headless"}}
 
 	w := New(
 		queue,
@@ -196,6 +206,7 @@ func TestWorker_ProcessJob_HeadlessPromotionApplied(t *testing.T) {
 		headlessFetcher,
 		detector,
 		nil,
+		idGen,
 		Config{
 			ContentType: "text/html",
 			BlobPrefix:  "pages",
@@ -295,12 +306,13 @@ func (f *fakeJobStore) RecordPage(_ context.Context, page crawler.PageRecord) er
 func TestWorkerBuildBlobPath(t *testing.T) {
 	t.Parallel()
 
-	w := New(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, Config{BlobPrefix: "/pages/"}, zap.NewNop(), nil)
-	if got := w.buildBlobPath("job", "hash"); got != "pages/job/hash.html" {
+	ts := time.Date(2025, time.July, 4, 9, 0, 0, 0, time.UTC)
+	w := New(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, Config{BlobPrefix: "/crawl/"}, zap.NewNop(), nil)
+	if got := w.buildBlobPath(ts, "Example.com", "page-1"); got != "crawl/202507/04/09/host=example.com/id=page-1" {
 		t.Fatalf("unexpected blob path: %s", got)
 	}
 	w.cfg.BlobPrefix = ""
-	if got := w.buildBlobPath("job", "hash"); got != "job/hash.html" {
+	if got := w.buildBlobPath(ts, "", "page-1"); got != "202507/04/09/host=unknown/id=page-1" {
 		t.Fatalf("unexpected fallback blob path: %s", got)
 	}
 }
@@ -309,7 +321,7 @@ func TestWorkerBuildBlobPath(t *testing.T) {
 func TestWorkerAllowHelpers(t *testing.T) {
 	t.Parallel()
 
-	w := New(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, Config{}, zap.NewNop(), nil)
+	w := New(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, Config{}, zap.NewNop(), nil)
 	if !w.allowFetch("job", "url", 0) || !w.allowHeadless("job", "url", 0) {
 		t.Fatal("expected allows with nil policy")
 	}
@@ -366,6 +378,7 @@ type fakeBlobStore struct {
 	mu       sync.Mutex
 	objects  map[string][]byte
 	lastPath string
+	paths    []string
 }
 
 func newFakeBlobStore() *fakeBlobStore {
@@ -377,7 +390,24 @@ func (b *fakeBlobStore) PutObject(_ context.Context, path string, _ string, data
 	defer b.mu.Unlock()
 	b.objects[path] = append([]byte(nil), data...)
 	b.lastPath = path
+	b.paths = append(b.paths, path)
 	return "memory://" + path, nil
+}
+
+type fakeIDGen struct {
+	mu  sync.Mutex
+	ids []string
+}
+
+func (f *fakeIDGen) NewID() (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.ids) == 0 {
+		return "", fmt.Errorf("no ids configured")
+	}
+	id := f.ids[0]
+	f.ids = f.ids[1:]
+	return id, nil
 }
 
 type fakePublisher struct {

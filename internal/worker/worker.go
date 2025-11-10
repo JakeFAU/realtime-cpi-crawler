@@ -3,13 +3,18 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/url"
+	"path"
 	"strings"
 	"time"
 
 	"go.uber.org/zap"
 
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/crawler"
+	"github.com/JakeFAU/realtime-cpi-crawler/internal/id/uuid"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/metrics"
 )
 
@@ -32,6 +37,7 @@ type Worker struct {
 	headlessFetcher crawler.Fetcher
 	detector        crawler.HeadlessDetector
 	policy          crawler.Policy
+	idGen           crawler.IDGenerator
 	cfg             Config
 	logger          *zap.Logger
 	meters          *metrics.Collectors
@@ -49,12 +55,16 @@ func New(
 	headless crawler.Fetcher,
 	detector crawler.HeadlessDetector,
 	policy crawler.Policy,
+	idGen crawler.IDGenerator,
 	cfg Config,
 	logger *zap.Logger,
 	meters *metrics.Collectors,
 ) *Worker {
 	if cfg.ContentType == "" {
 		cfg.ContentType = "text/html; charset=utf-8"
+	}
+	if idGen == nil {
+		idGen = uuid.NewUUIDGenerator()
 	}
 	return &Worker{
 		queue:           queue,
@@ -67,6 +77,7 @@ func New(
 		headlessFetcher: headless,
 		detector:        detector,
 		policy:          policy,
+		idGen:           idGen,
 		cfg:             cfg,
 		logger:          logger,
 		meters:          meters,
@@ -141,12 +152,16 @@ func (w *Worker) allowHeadless(jobID, url string, depth int) bool {
 	return w.policy.AllowHeadless(jobID, url, depth)
 }
 
-func (w *Worker) buildBlobPath(jobID, hash string) string {
+func (w *Worker) buildBlobPath(ts time.Time, host, pageID string) string {
+	ts = ts.UTC()
 	prefix := strings.Trim(w.cfg.BlobPrefix, "/")
+	hostSegment := fmt.Sprintf("host=%s", sanitizeHost(host))
+	idSegment := fmt.Sprintf("id=%s", pageID)
+	base := path.Join(ts.Format("200601"), ts.Format("02"), ts.Format("15"), hostSegment, idSegment)
 	if prefix == "" {
-		return fmt.Sprintf("%s/%s.html", jobID, hash)
+		return base
 	}
-	return fmt.Sprintf("%s/%s/%s.html", prefix, jobID, hash)
+	return path.Join(prefix, base)
 }
 
 func (w *Worker) handleURL(
@@ -243,18 +258,53 @@ func (w *Worker) persistAndPublish(ctx context.Context, jobID, url string, resp 
 		return fmt.Errorf("hash body: %w", err)
 	}
 
-	blobPath := w.buildBlobPath(jobID, hash)
-	uri, err := w.blobStore.PutObject(ctx, blobPath, w.cfg.ContentType, resp.Body)
+	pageID, err := w.newPageID()
 	if err != nil {
-		return fmt.Errorf("put object: %w", err)
+		return fmt.Errorf("generate page id: %w", err)
+	}
+
+	storedAt := w.clock.Now().UTC()
+	basePath := w.buildBlobPath(storedAt, extractHost(resp.URL), pageID)
+
+	rawPath := path.Join(basePath, "raw.html")
+	uri, err := w.blobStore.PutObject(ctx, rawPath, w.cfg.ContentType, resp.Body)
+	if err != nil {
+		return fmt.Errorf("put raw object: %w", err)
+	}
+
+	headersPath := path.Join(basePath, "headers.json")
+	if err := w.putJSON(ctx, headersPath, normalizeHeaders(resp.Headers)); err != nil {
+		return fmt.Errorf("put headers: %w", err)
+	}
+
+	metaPath := path.Join(basePath, "meta.json")
+	meta := pageMetaPayload{
+		URL:         resp.URL,
+		Status:      resp.StatusCode,
+		Size:        len(resp.Body),
+		SHA256:      hash,
+		ContentType: contentTypeFromResponse(resp, w.cfg.ContentType),
+		ParentID:    "",
+		JobUUID:     jobID,
+	}
+	if err := w.putJSON(ctx, metaPath, meta); err != nil {
+		return fmt.Errorf("put meta: %w", err)
+	}
+
+	if len(resp.Screenshot) > 0 {
+		screenshotPath := path.Join(basePath, "screenshot.png")
+		if _, err := w.blobStore.PutObject(ctx, screenshotPath, "image/png", resp.Screenshot); err != nil {
+			return fmt.Errorf("put screenshot: %w", err)
+		}
 	}
 
 	page := crawler.PageRecord{
+		ID:           pageID,
 		JobID:        jobID,
 		URL:          resp.URL,
 		StatusCode:   resp.StatusCode,
 		UsedHeadless: resp.UsedHeadless,
-		FetchedAt:    w.clock.Now(),
+		FetchedAt:    storedAt,
 		DurationMs:   resp.Duration.Milliseconds(),
 		ContentHash:  hash,
 		Headers:      resp.Headers,
@@ -264,7 +314,7 @@ func (w *Worker) persistAndPublish(ctx context.Context, jobID, url string, resp 
 		return fmt.Errorf("record page: %w", err)
 	}
 
-	if err := w.publishResult(ctx, jobID, url, uri, hash, resp); err != nil {
+	if err := w.publishResult(ctx, jobID, url, uri, hash, resp, pageID); err != nil {
 		return err
 	}
 	return nil
@@ -277,12 +327,14 @@ func (w *Worker) publishResult(
 	uri string,
 	hash string,
 	resp crawler.FetchResponse,
+	pageID string,
 ) error {
 	if w.cfg.Topic == "" || w.publisher == nil {
 		return nil
 	}
 	payload := map[string]any{
 		"job_id":    jobID,
+		"page_id":   pageID,
 		"url":       url,
 		"blob_uri":  uri,
 		"hash":      hash,
@@ -295,12 +347,100 @@ func (w *Worker) publishResult(
 	}
 	w.logger.Info("page published",
 		zap.String("job_id", jobID),
+		zap.String("page_id", pageID),
 		zap.String("url", url),
 		zap.String("blob_uri", uri),
 		zap.String("hash", hash),
 		zap.Bool("headless", resp.UsedHeadless),
 	)
 	return nil
+}
+
+type pageMetaPayload struct {
+	URL         string `json:"url"`
+	Status      int    `json:"status"`
+	Size        int    `json:"size"`
+	SHA256      string `json:"sha256"`
+	ContentType string `json:"content_type"`
+	ParentID    string `json:"parent_id"`
+	JobUUID     string `json:"job_uuid"`
+}
+
+func (w *Worker) putJSON(ctx context.Context, objectPath string, payload any) error {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal json: %w", err)
+	}
+	if _, err := w.blobStore.PutObject(ctx, objectPath, "application/json", data); err != nil {
+		return fmt.Errorf("put object: %w", err)
+	}
+	return nil
+}
+
+func normalizeHeaders(h http.Header) map[string][]string {
+	if len(h) == 0 {
+		return map[string][]string{}
+	}
+	out := make(map[string][]string, len(h))
+	for k, values := range h {
+		out[k] = append([]string(nil), values...)
+	}
+	return out
+}
+
+func (w *Worker) newPageID() (string, error) {
+	if w.idGen == nil {
+		return "", fmt.Errorf("id generator is not configured")
+	}
+	id, err := w.idGen.NewID()
+	if err != nil {
+		return "", fmt.Errorf("generate page id: %w", err)
+	}
+	return id, nil
+}
+
+func extractHost(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host == "" {
+		return "unknown"
+	}
+	return u.Host
+}
+
+func sanitizeHost(host string) string {
+	host = strings.ToLower(strings.TrimSpace(host))
+	if host == "" {
+		return "unknown"
+	}
+	var b strings.Builder
+	for _, r := range host {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '.' || r == '-':
+			b.WriteRune(r)
+		case r == ':':
+			b.WriteRune('_')
+		default:
+			b.WriteRune('-')
+		}
+	}
+	result := strings.Trim(b.String(), "-_")
+	if result == "" {
+		return "unknown"
+	}
+	return result
+}
+
+func contentTypeFromResponse(resp crawler.FetchResponse, fallback string) string {
+	if resp.Headers != nil {
+		if ct := resp.Headers.Get("Content-Type"); ct != "" {
+			return ct
+		}
+	}
+	return fallback
 }
 
 func (w *Worker) deriveFinalStatus(
