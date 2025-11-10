@@ -12,7 +12,7 @@ permissions:
 env:
   GCP_PROJECT: realtime-cpi
   GCP_REGION: us-east4
-  GAR_REPOSITORY: crawler # Artifact Registry repo name (docker)
+  GAR_REPOSITORY: realtime-cpi-docker # Artifact Registry repo name (docker)
   IMAGE_NAME: realtime-cpi-crawler
   SERVICE_NAME: crawler-api # Cloud Run service name
   # Resulting image: us-east4-docker.pkg.dev/$GCP_PROJECT/$GAR_REPOSITORY/$IMAGE_NAME:$GITHUB_SHA
