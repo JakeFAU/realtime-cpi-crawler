@@ -85,7 +85,7 @@ func main() {
 	default:
 		blobStore = memoryStorage.NewBlobStore()
 	}
-	var retrievalStore *pgstore.RetrievalStore
+	var retrievalStore crawler.RetrievalStore
 	if cfg.Database.DSN != "" {
 		retrievalStore, err = pgstore.NewRetrievalStore(ctx, pgstore.RetrievalStoreConfig{
 			DSN:             cfg.Database.DSN,
