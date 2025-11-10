@@ -33,6 +33,7 @@ func TestWorker_ProcessJob_SuccessFlow(t *testing.T) {
 	}
 	jobStore := newFakeJobStore()
 	blobStore := newFakeBlobStore()
+	retrievalStore := newFakeRetrievalStore()
 	publisher := newFakePublisher()
 	hasher := &fakeHasher{hash: "abc123"}
 	clock := &fakeClock{now: time.Date(2025, time.January, 2, 15, 0, 0, 0, time.UTC)}
@@ -52,6 +53,7 @@ func TestWorker_ProcessJob_SuccessFlow(t *testing.T) {
 		queue,
 		jobStore,
 		blobStore,
+		retrievalStore,
 		publisher,
 		hasher,
 		clock,
@@ -83,6 +85,7 @@ func TestWorker_ProcessJob_SuccessFlow(t *testing.T) {
 	require.Len(t, publisher.messages, 1)
 	require.Equal(t, "page-success", publisher.messages[0]["page_id"])
 	require.Equal(t, crawler.JobCounters{PagesSucceeded: 1}, jobStore.lastCounters())
+	require.Len(t, retrievalStore.records(), 1)
 	cancel()
 }
 
@@ -123,6 +126,7 @@ func TestWorker_ProcessJob_PublishFailureMarksJobFailed(t *testing.T) {
 		queue,
 		jobStore,
 		blobStore,
+		nil,
 		publisher,
 		hasher,
 		clock,
@@ -199,6 +203,7 @@ func TestWorker_ProcessJob_HeadlessPromotionApplied(t *testing.T) {
 		queue,
 		jobStore,
 		blobStore,
+		nil,
 		publisher,
 		hasher,
 		clock,
@@ -225,6 +230,68 @@ func TestWorker_ProcessJob_HeadlessPromotionApplied(t *testing.T) {
 	require.Len(t, jobStore.pages, 1)
 	require.True(t, jobStore.pages[0].UsedHeadless)
 	require.Equal(t, "https://example.com/headless", jobStore.pages[0].URL)
+	cancel()
+}
+
+// TestWorker_ProcessJob_RetrievalStoreFailure ensures errors from the retrieval store fail the job.
+func TestWorker_ProcessJob_RetrievalStoreFailure(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	queue := &fakeQueue{
+		items: []crawler.QueueItem{{
+			JobID: "job-retrieval-fail",
+			Params: crawler.JobParameters{
+				URLs: []string{"https://example.com"},
+			},
+		}},
+	}
+	jobStore := newFakeJobStore()
+	blobStore := newFakeBlobStore()
+	retrievalStore := newFakeRetrievalStore()
+	retrievalStore.err = errors.New("db down")
+	publisher := newFakePublisher()
+	hasher := &fakeHasher{hash: "deadbeef"}
+	clock := &fakeClock{now: time.Unix(400, 0)}
+	fetcher := &fakeFetcher{
+		responses: map[string]crawler.FetchResponse{
+			"https://example.com": {
+				URL:        "https://example.com",
+				StatusCode: http.StatusOK,
+				Body:       []byte("<html>ok</html>"),
+			},
+		},
+	}
+	idGen := &fakeIDGen{ids: []string{"page-db-fail"}}
+
+	w := New(
+		queue,
+		jobStore,
+		blobStore,
+		retrievalStore,
+		publisher,
+		hasher,
+		clock,
+		fetcher,
+		nil,
+		nil,
+		nil,
+		idGen,
+		Config{
+			ContentType: "text/html",
+			BlobPrefix:  "pages",
+		},
+		zap.NewNop(),
+		nil,
+	)
+
+	go w.Run(ctx)
+
+	require.Eventually(t, func() bool {
+		return jobStore.lastStatus() == crawler.JobStatusFailed
+	}, time.Second, 10*time.Millisecond)
 	cancel()
 }
 
@@ -307,7 +374,7 @@ func TestWorkerBuildBlobPath(t *testing.T) {
 	t.Parallel()
 
 	ts := time.Date(2025, time.July, 4, 9, 0, 0, 0, time.UTC)
-	w := New(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, Config{BlobPrefix: "/crawl/"}, zap.NewNop(), nil)
+	w := New(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, Config{BlobPrefix: "/crawl/"}, zap.NewNop(), nil)
 	if got := w.buildBlobPath(ts, "Example.com", "page-1"); got != "crawl/202507/04/09/host=example.com/id=page-1" {
 		t.Fatalf("unexpected blob path: %s", got)
 	}
@@ -321,7 +388,7 @@ func TestWorkerBuildBlobPath(t *testing.T) {
 func TestWorkerAllowHelpers(t *testing.T) {
 	t.Parallel()
 
-	w := New(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, Config{}, zap.NewNop(), nil)
+	w := New(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, Config{}, zap.NewNop(), nil)
 	if !w.allowFetch("job", "url", 0) || !w.allowHeadless("job", "url", 0) {
 		t.Fatal("expected allows with nil policy")
 	}
@@ -392,6 +459,34 @@ func (b *fakeBlobStore) PutObject(_ context.Context, path string, _ string, data
 	b.lastPath = path
 	b.paths = append(b.paths, path)
 	return "memory://" + path, nil
+}
+
+type fakeRetrievalStore struct {
+	mu      sync.Mutex
+	entries []crawler.RetrievalRecord
+	err     error
+}
+
+func newFakeRetrievalStore() *fakeRetrievalStore {
+	return &fakeRetrievalStore{}
+}
+
+func (f *fakeRetrievalStore) StoreRetrieval(_ context.Context, rec crawler.RetrievalRecord) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.entries = append(f.entries, rec)
+	return nil
+}
+
+func (f *fakeRetrievalStore) records() []crawler.RetrievalRecord {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]crawler.RetrievalRecord, len(f.entries))
+	copy(out, f.entries)
+	return out
 }
 
 type fakeIDGen struct {

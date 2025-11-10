@@ -28,7 +28,15 @@ storage:
   prefix: "crawl"
   content_type: "text/html; charset=utf-8"
 
+database:
+  dsn: ""
+  table: "retrievals"
+  max_conns: 4
+  min_conns: 0
+  max_conn_lifetime: 0s
+
 pubsub:
+  project_id: ""
   topic_name: ""
 
 logging:

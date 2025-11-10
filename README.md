@@ -71,7 +71,9 @@ Configuration is merged from `config.yaml` and `CRAWLER_*` environment variables
 - `http.timeout_seconds` – per-page probe budget (also used as default job budget).
 - `headless.enabled`, `headless.max_parallel`, `headless.nav_timeout_seconds`, `headless.promotion_threshold`.
 - `storage.backend` (`memory` or `gcs`), `storage.bucket` (required for `gcs`), `storage.prefix`, `storage.content_type`.
+- `database.dsn`, `database.table`, `database.max_conns`, `database.min_conns`, `database.max_conn_lifetime`.
 - `pubsub.topic_name`.
+- `pubsub.project_id`.
 - `logging.development` – toggles zap dev vs prod logger.
 - `standard_jobs.<name>` – canned job parameter templates.
 
@@ -82,7 +84,7 @@ See [`INSTRUCTIONS.md`](INSTRUCTIONS.md) for detailed operational guidance.
 ## Development Notes
 
 - Make targets are replaced by Go tooling + pre-commit hooks (`gofumpt`, `goimports`, `golangci-lint`, `go test`, `govulncheck`).
-- Memory-backed `JobStore` and `Publisher` keep the binary dependency-free; swap in the provided GCS BlobStore and real queues/databases as needed.
+- Memory-backed `JobStore` and `Publisher` keep the binary dependency-free; swap in the provided GCS/Cloud Pub/Sub/Postgres implementations as needed.
 - The queue is currently in-memory FIFO; replace with a priority-aware implementation to enforce domain budgets or SLA tiers.
 - Zap logging defaults to development mode with colorized output; production mode uses JSON with timestamps and includes stack traces.
 
@@ -114,3 +116,38 @@ gs://<bucket>/<prefix>/yyyymm/dd/hh/host=<host>/id=<uuid7>/
 ```
 
 Each fetched page receives its own UUIDv7 (also recorded in the API response) so the files can be referenced from downstream databases or workers.
+
+Alongside the blobs, each retrieval is normalized into Postgres (default table `retrievals`). Expected columns:
+
+- `id UUID PRIMARY KEY DEFAULT gen_uuid_v7()` – page UUID (matches blob path).
+- `job_uuid UUID NOT NULL` – ID of the crawl job.
+- `partition_ts TIMESTAMPTZ NOT NULL` – hour bucket (`retrieval_timestamp` truncated to the hour) to aid partitioning.
+- `retrieval_timestamp TIMESTAMPTZ NOT NULL DEFAULT now()` – precise ingest time.
+- `retrieval_url TEXT NOT NULL` – final URL fetched.
+- `retrieval_hashcode TEXT` – SHA256/content hash.
+- `retrieval_blob_location TEXT` – `gs://` URI of `raw.html`.
+- `retrieval_headers JSONB` – serialized HTTP headers.
+- `retrieval_status_code INTEGER` – HTTP status.
+- `retrieval_content_type TEXT` – MIME type inferred from the response/body.
+- `parent_id UUID NULL` / `parent_ts TIMESTAMPTZ NULL` – optional ancestry for promoted/sub-pages.
+- `retrieval_processed BOOLEAN NOT NULL DEFAULT false` / `processing_error TEXT NULL` – toggled by downstream AI stages.
+- `created_at TIMESTAMPTZ NOT NULL DEFAULT now()` / `updated_at TIMESTAMPTZ NOT NULL DEFAULT now()`.
+
+Set `database.table` if your schema name differs. The worker only performs inserts; downstream consumers own the `retrieval_processed` or `processing_error` columns.
+
+When both `pubsub.project_id` and `pubsub.topic_name` are provided, each successful fetch is published to Google Cloud Pub/Sub as a compact JSON document:
+
+```json
+{
+  "job_id": "job-uuid",
+  "page_id": "page-uuid",
+  "url": "https://example.com",
+  "blob_uri": "gs://bucket/…/raw.html",
+  "hash": "sha256",
+  "status": 200,
+  "headless": false,
+  "timestamp": "2025-01-02T15:04:05Z"
+}
+```
+
+This allows an AI post-processor to pick up work as soon as the retrieval lands without polling Postgres.

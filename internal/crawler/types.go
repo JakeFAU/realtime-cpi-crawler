@@ -68,6 +68,23 @@ type PageRecord struct {
 	Metrics      map[string]int `json:"metrics,omitempty"`
 }
 
+// RetrievalRecord captures details persisted to downstream storage.
+type RetrievalRecord struct {
+	ID              string
+	JobID           string
+	URL             string
+	Hash            string
+	BlobURI         string
+	Headers         http.Header
+	StatusCode      int
+	ContentType     string
+	SizeBytes       int
+	RetrievedAt     time.Time
+	PartitionTS     time.Time
+	ParentID        *string
+	ParentTimestamp *time.Time
+}
+
 // FetchRequest captures everything needed to fetch a URL.
 type FetchRequest struct {
 	JobID                 string

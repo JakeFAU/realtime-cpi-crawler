@@ -19,6 +19,7 @@ type Config struct {
 	HTTP         HTTPConfig                       `mapstructure:"http"`
 	Headless     HeadlessConfig                   `mapstructure:"headless"`
 	Storage      StorageConfig                    `mapstructure:"storage"`
+	Database     DatabaseConfig                   `mapstructure:"database"`
 	PubSub       PubSubConfig                     `mapstructure:"pubsub"`
 	Logging      LoggingConfig                    `mapstructure:"logging"`
 	StandardJobs map[string]crawler.JobParameters `mapstructure:"standard_jobs"`
@@ -66,9 +67,19 @@ type StorageConfig struct {
 	ContentType string `mapstructure:"content_type"`
 }
 
+// DatabaseConfig controls Postgres connectivity for retrieval persistence.
+type DatabaseConfig struct {
+	DSN             string        `mapstructure:"dsn"`
+	Table           string        `mapstructure:"table"`
+	MaxConns        int32         `mapstructure:"max_conns"`
+	MinConns        int32         `mapstructure:"min_conns"`
+	MaxConnLifetime time.Duration `mapstructure:"max_conn_lifetime"`
+}
+
 // PubSubConfig holds metadata for publish-subscribe notifications.
 type PubSubConfig struct {
 	TopicName string `mapstructure:"topic_name"`
+	ProjectID string `mapstructure:"project_id"`
 }
 
 // LoggingConfig toggles zap development features.
@@ -120,10 +131,13 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("storage.backend", "memory")
 	v.SetDefault("storage.prefix", "crawl")
 	v.SetDefault("storage.content_type", "text/html; charset=utf-8")
+	v.SetDefault("database.table", "retrievals")
 	v.SetDefault("logging.development", true)
 }
 
 // Validate enforces required values and reasonable limits.
+//
+//nolint:gocyclo,gocognit // reason (Configuration validation)
 func (c Config) Validate() error {
 	if c.Server.Port <= 0 {
 		return fmt.Errorf("server.port must be > 0")
@@ -157,6 +171,12 @@ func (c Config) Validate() error {
 		}
 	default:
 		return fmt.Errorf("storage.backend must be either memory or gcs")
+	}
+	if c.Database.DSN != "" && strings.TrimSpace(c.Database.Table) == "" {
+		return fmt.Errorf("database.table must be set when database.dsn is provided")
+	}
+	if c.PubSub.TopicName != "" && strings.TrimSpace(c.PubSub.ProjectID) == "" {
+		return fmt.Errorf("pubsub.project_id must be set when pubsub.topic_name is configured")
 	}
 	return nil
 }

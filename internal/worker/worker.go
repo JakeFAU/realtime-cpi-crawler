@@ -30,6 +30,7 @@ type Worker struct {
 	queue           crawler.Queue
 	jobStore        crawler.JobStore
 	blobStore       crawler.BlobStore
+	retrievalStore  crawler.RetrievalStore
 	publisher       crawler.Publisher
 	hasher          crawler.Hasher
 	clock           crawler.Clock
@@ -48,6 +49,7 @@ func New(
 	queue crawler.Queue,
 	jobStore crawler.JobStore,
 	blobStore crawler.BlobStore,
+	retrievalStore crawler.RetrievalStore,
 	publisher crawler.Publisher,
 	hasher crawler.Hasher,
 	clock crawler.Clock,
@@ -70,6 +72,7 @@ func New(
 		queue:           queue,
 		jobStore:        jobStore,
 		blobStore:       blobStore,
+		retrievalStore:  retrievalStore,
 		publisher:       publisher,
 		hasher:          hasher,
 		clock:           clock,
@@ -278,12 +281,14 @@ func (w *Worker) persistAndPublish(ctx context.Context, jobID, url string, resp 
 	}
 
 	metaPath := path.Join(basePath, "meta.json")
+	contentType := contentTypeFromResponse(resp, w.cfg.ContentType)
+
 	meta := pageMetaPayload{
 		URL:         resp.URL,
 		Status:      resp.StatusCode,
 		Size:        len(resp.Body),
 		SHA256:      hash,
-		ContentType: contentTypeFromResponse(resp, w.cfg.ContentType),
+		ContentType: contentType,
 		ParentID:    "",
 		JobUUID:     jobID,
 	}
@@ -312,6 +317,10 @@ func (w *Worker) persistAndPublish(ctx context.Context, jobID, url string, resp 
 	}
 	if err := w.jobStore.RecordPage(ctx, page); err != nil {
 		return fmt.Errorf("record page: %w", err)
+	}
+
+	if err := w.storeRetrieval(ctx, page, contentType, len(resp.Body)); err != nil {
+		return err
 	}
 
 	if err := w.publishResult(ctx, jobID, url, uri, hash, resp, pageID); err != nil {
@@ -432,6 +441,29 @@ func sanitizeHost(host string) string {
 		return "unknown"
 	}
 	return result
+}
+
+func (w *Worker) storeRetrieval(ctx context.Context, page crawler.PageRecord, contentType string, size int) error {
+	if w.retrievalStore == nil {
+		return nil
+	}
+	record := crawler.RetrievalRecord{
+		ID:          page.ID,
+		JobID:       page.JobID,
+		URL:         page.URL,
+		Hash:        page.ContentHash,
+		BlobURI:     page.BlobURI,
+		Headers:     page.Headers,
+		StatusCode:  page.StatusCode,
+		ContentType: contentType,
+		SizeBytes:   size,
+		RetrievedAt: page.FetchedAt,
+		PartitionTS: page.FetchedAt.Truncate(time.Hour),
+	}
+	if err := w.retrievalStore.StoreRetrieval(ctx, record); err != nil {
+		return fmt.Errorf("store retrieval: %w", err)
+	}
+	return nil
 }
 
 func contentTypeFromResponse(resp crawler.FetchResponse, fallback string) string {

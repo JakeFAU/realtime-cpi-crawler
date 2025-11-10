@@ -31,6 +31,7 @@ func TestDispatcherRunStartsWorkers(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		nil,
 		worker.Config{},
 		zap.NewNop(),
 		nil,

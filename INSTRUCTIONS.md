@@ -87,7 +87,15 @@ storage:
   prefix: "crawl"
   content_type: "text/html; charset=utf-8"
 
+database:
+  dsn: ""
+  table: "retrievals"
+  max_conns: 4
+  min_conns: 0
+  max_conn_lifetime: 0s
+
 pubsub:
+  project_id: ""
   topic_name: ""
 ```
 
@@ -95,6 +103,8 @@ pubsub:
 - `storage.bucket` names the GCS bucket when `storage.backend = gcs`.
 - `storage.prefix` scopes blob paths (`<prefix>/crawl/...`); leave blank to write at the root.
 - `storage.content_type` is stored alongside each blob for downstream consumers.
+- `database.*` controls the Postgres pool used to persist retrieval rows (set `dsn` to enable).
+- `pubsub.project_id` + `pubsub.topic_name` enable Cloud Pub/Sub publishing; leave blank to disable.
 - `pubsub.topic_name` enables publish-on-completion; leave empty to disable publishing.
 
 ### 2.7 Logging
@@ -116,6 +126,31 @@ standard_jobs:
 ```
 
 ---
+
+### 2.9 Retrieval Persistence
+
+The worker mirrors each successful fetch into Postgres (default table `retrievals`). Create the table (or view) with at least:
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id uuid` | PK, default `gen_uuid_v7()` | Matches the blob folder `id=<uuid>` |
+| `job_uuid uuid` | NOT NULL | Crawl/job identifier |
+| `partition_ts timestamptz` | NOT NULL | `retrieval_timestamp` truncated to the hour (helps time-based partitions) |
+| `retrieval_timestamp timestamptz` | NOT NULL DEFAULT now() | Exact ingest time |
+| `retrieval_url text` | NOT NULL | Final URL |
+| `retrieval_hashcode text` | NULL | SHA256/hasher output |
+| `retrieval_blob_location text` | NULL | `gs://…/raw.html` |
+| `retrieval_headers jsonb` | NULL | HTTP headers captured during fetch |
+| `retrieval_status_code integer` | NULL | HTTP response status |
+| `retrieval_content_type text` | NULL | MIME type used when writing `raw.html` |
+| `parent_id uuid` / `parent_ts timestamptz` | NULL | Optional ancestry for promoted sub-pages |
+| `retrieval_processed boolean` | NOT NULL DEFAULT false | Flipped by the AI stack once complete |
+| `processing_error text` | NULL | Set by AI stack on failure |
+| `created_at timestamptz` / `updated_at timestamptz` | NOT NULL DEFAULT now() | Basic audit columns |
+
+Tune `database.table` if you tuck the data under a different schema or table name. The crawler only inserts rows; downstream services own the processed/error flags.
+
+When Cloud Pub/Sub is enabled, each retrieval also results in a JSON payload (containing `job_id`, `page_id`, `url`, `blob_uri`, `hash`, `status`, `headless`, `timestamp`) being published to `pubsub.topic_name` for the AI processing tier.
 
 ## 3. API Details
 
