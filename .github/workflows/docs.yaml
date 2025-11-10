@@ -1,0 +1,56 @@
+name: Generate Docs (GitHub Pages)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: Install gomarkdoc
+        run: go install github.com/princjef/gomarkdoc/cmd/gomarkdoc@latest
+
+      - name: Generate markdown docs
+        run: |
+          rm -rf _site
+          mkdir -p _site
+          # Per-package docs under _site/, plus a top-level index
+          gomarkdoc ./... --output "_site/{{.PackageName}}/README.md"
+          # Make a simple landing page
+          cat > _site/index.md <<'EOF'
+          # realtime-cpi-crawler — API Docs
+          - Generated from Go docstrings.
+          - One folder per package below.
+
+          {{range .}}{{end}}
+          EOF
+          # Prevent Jekyll munging
+          touch _site/.nojekyll
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
