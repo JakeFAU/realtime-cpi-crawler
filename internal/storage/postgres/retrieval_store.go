@@ -87,11 +87,12 @@ func NewRetrievalStoreWithPool(pool execCloser, table string) (*RetrievalStore, 
 }
 
 // Close releases the underlying pool resources.
-func (s *RetrievalStore) Close() {
+func (s *RetrievalStore) Close() error {
 	if s == nil || s.pool == nil {
-		return
+		return nil
 	}
 	s.pool.Close()
+	return nil
 }
 
 // StoreRetrieval inserts a retrieval row into Postgres.

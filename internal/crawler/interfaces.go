@@ -23,6 +23,7 @@ type BlobStore interface {
 // RetrievalStore writes normalized retrieval rows to a downstream database.
 type RetrievalStore interface {
 	StoreRetrieval(ctx context.Context, record RetrievalRecord) error
+	Close() error
 }
 
 // Publisher pushes completion events to Pub/Sub (or similar).

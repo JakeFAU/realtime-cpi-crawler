@@ -471,6 +471,10 @@ func newFakeRetrievalStore() *fakeRetrievalStore {
 	return &fakeRetrievalStore{}
 }
 
+func (f *fakeRetrievalStore) Close() error {
+	return nil
+}
+
 func (f *fakeRetrievalStore) StoreRetrieval(_ context.Context, rec crawler.RetrievalRecord) error {
 	if f.err != nil {
 		return f.err

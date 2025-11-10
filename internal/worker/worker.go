@@ -290,7 +290,7 @@ func (w *Worker) persistAndPublish(ctx context.Context, jobID, url string, resp 
 		Size:        len(resp.Body),
 		SHA256:      hash,
 		ContentType: contentType,
-		ParentID:    nil,
+		ParentID:    "",
 		JobUUID:     jobID,
 	}
 	if err := w.putJSON(ctx, metaPath, meta); err != nil {

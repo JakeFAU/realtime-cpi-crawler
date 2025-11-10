@@ -97,7 +97,11 @@ func main() {
 		if err != nil {
 			logger.Fatal("retrieval store init failed", zap.Error(err))
 		}
-		defer retrievalStore.Close()
+		defer func() {
+			if closeErr := retrievalStore.Close(); closeErr != nil {
+				logger.Warn("retrieval store close failed", zap.Error(closeErr))
+			}
+		}()
 	}
 	var publisher crawler.Publisher
 	var pubsubClient *pubsub.Client
