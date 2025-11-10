@@ -22,6 +22,7 @@ type Config struct {
 	Database     DatabaseConfig                   `mapstructure:"database"`
 	PubSub       PubSubConfig                     `mapstructure:"pubsub"`
 	Logging      LoggingConfig                    `mapstructure:"logging"`
+	Progress     ProgressConfig                   `mapstructure:"progress"`
 	StandardJobs map[string]crawler.JobParameters `mapstructure:"standard_jobs"`
 }
 
@@ -87,6 +88,36 @@ type LoggingConfig struct {
 	Development bool `mapstructure:"development"`
 }
 
+// ProgressConfig controls the progress hub batching behavior.
+// Environment variables (via CRAWLER_ prefix):
+//
+//	CRAWLER_PROGRESS_ENABLED
+//	CRAWLER_PROGRESS_BUFFER_SIZE
+//	CRAWLER_PROGRESS_BATCH_MAX_EVENTS
+//	CRAWLER_PROGRESS_BATCH_MAX_WAIT_MS
+//	CRAWLER_PROGRESS_SINK_TIMEOUT_MS
+//	CRAWLER_PROGRESS_LOG_ENABLED
+type ProgressConfig struct {
+	// Enabled toggles the progress subsystem (default true).
+	Enabled bool `mapstructure:"enabled"`
+	// BufferSize configures hub channel capacity (default 4096).
+	BufferSize int `mapstructure:"buffer_size"`
+	// Batch controls flush thresholds.
+	Batch ProgressBatchConfig `mapstructure:"batch"`
+	// SinkTimeoutMs bounds per-sink Consume calls (default 2000).
+	SinkTimeoutMs int `mapstructure:"sink_timeout_ms"`
+	// LogEnabled toggles the LogSink for debugging (default false).
+	LogEnabled bool `mapstructure:"log_enabled"`
+}
+
+// ProgressBatchConfig contains batching thresholds.
+type ProgressBatchConfig struct {
+	// MaxEvents flushes after this many events accumulate (default 1000).
+	MaxEvents int `mapstructure:"max_events"`
+	// MaxWaitMs flushes after this many milliseconds even if under MaxEvents (default 500).
+	MaxWaitMs int `mapstructure:"max_wait_ms"`
+}
+
 // Load builds a Config from disk/environment.
 func Load(path string) (Config, error) {
 	v := viper.New()
@@ -133,6 +164,12 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("storage.content_type", "text/html; charset=utf-8")
 	v.SetDefault("database.table", "retrievals")
 	v.SetDefault("logging.development", true)
+	v.SetDefault("progress.enabled", true)
+	v.SetDefault("progress.buffer_size", 4096)
+	v.SetDefault("progress.batch.max_events", 1000)
+	v.SetDefault("progress.batch.max_wait_ms", 500)
+	v.SetDefault("progress.sink_timeout_ms", 2000)
+	v.SetDefault("progress.log_enabled", false)
 }
 
 // Validate enforces required values and reasonable limits.
@@ -177,6 +214,20 @@ func (c Config) Validate() error {
 	}
 	if c.PubSub.TopicName != "" && strings.TrimSpace(c.PubSub.ProjectID) == "" {
 		return fmt.Errorf("pubsub.project_id must be set when pubsub.topic_name is configured")
+	}
+	if c.Progress.Enabled {
+		if c.Progress.BufferSize <= 0 {
+			return fmt.Errorf("progress.buffer_size must be > 0")
+		}
+		if c.Progress.Batch.MaxEvents <= 0 {
+			return fmt.Errorf("progress.batch.max_events must be > 0")
+		}
+		if c.Progress.Batch.MaxWaitMs <= 0 {
+			return fmt.Errorf("progress.batch.max_wait_ms must be > 0")
+		}
+		if c.Progress.SinkTimeoutMs <= 0 {
+			return fmt.Errorf("progress.sink_timeout_ms must be > 0")
+		}
 	}
 	return nil
 }

@@ -106,6 +106,15 @@ func TestConfigValidateErrors(t *testing.T) {
 		},
 		HTTP:    HTTPConfig{TimeoutSeconds: 10},
 		Storage: StorageConfig{Backend: "memory"},
+		Progress: ProgressConfig{
+			Enabled:    true,
+			BufferSize: 1024,
+			Batch: ProgressBatchConfig{
+				MaxEvents: 10,
+				MaxWaitMs: 100,
+			},
+			SinkTimeoutMs: 500,
+		},
 	}
 
 	tests := []struct {

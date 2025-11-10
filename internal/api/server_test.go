@@ -43,7 +43,7 @@ func TestServer_SubmitCustomJob_Succeeds(t *testing.T) {
 		},
 		Logging: config.LoggingConfig{Development: true},
 	}
-	server := NewServer(jobStore, dispatch, idGen, clock, cfg, metrics.New(), zap.NewNop())
+	server := NewServer(jobStore, dispatch, idGen, clock, cfg, metrics.New(), zap.NewNop(), nil)
 
 	reqBody := []byte(`{"urls":["https://example.com"]}`)
 	req := httptest.NewRequest(http.MethodPost, "/v1/jobs/custom", bytes.NewReader(reqBody))
@@ -183,6 +183,7 @@ func TestServer_SubmitStandardJob_Succeeds(t *testing.T) {
 		cfg,
 		metrics.New(),
 		zap.NewNop(),
+		nil,
 	)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/jobs/standard", bytes.NewBufferString(`{"name":"price-refresh"}`))
@@ -258,6 +259,7 @@ func TestServer_APIKeyMiddleware(t *testing.T) {
 		cfg,
 		metrics.New(),
 		zap.NewNop(),
+		nil,
 	)
 
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
@@ -453,5 +455,6 @@ func newTestServerWithStore(jobStore crawler.JobStore) *Server {
 		cfg,
 		metrics.New(),
 		zap.NewNop(),
+		nil,
 	)
 }

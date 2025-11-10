@@ -19,6 +19,7 @@ import (
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/crawler"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/dispatcher"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/metrics"
+	"github.com/JakeFAU/realtime-cpi-crawler/internal/store"
 )
 
 // Server wires HTTP handlers to the dispatcher and stores.
@@ -31,6 +32,7 @@ type Server struct {
 	cfg        config.Config
 	logger     *zap.Logger
 	metrics    *metrics.Collectors
+	progress   *ProgressHandler
 }
 
 // NewServer constructs a Server with middleware and routes.
@@ -42,6 +44,7 @@ func NewServer(
 	cfg config.Config,
 	meters *metrics.Collectors,
 	logger *zap.Logger,
+	progressRepo store.ProgressRepository,
 ) *Server {
 	s := &Server{
 		jobStore:   jobStore,
@@ -51,6 +54,7 @@ func NewServer(
 		cfg:        cfg,
 		metrics:    meters,
 		logger:     logger,
+		progress:   NewProgressHandler(progressRepo, logger.Named("progress_api")),
 	}
 	r := chi.NewRouter()
 	r.Use(requestIDMiddleware)
@@ -64,6 +68,11 @@ func NewServer(
 	r.Get("/healthz", s.healthz)
 	r.Get("/readyz", s.readyz)
 	r.Get("/metrics", s.serveMetrics)
+	r.Route("/api", func(r chi.Router) {
+		r.Get("/jobs", s.progress.ListJobs)
+		r.Get("/jobs/{job_id}", s.progress.GetJob)
+		r.Get("/jobs/{job_id}/sites", s.progress.ListJobSites)
+	})
 
 	r.Route("/v1", func(r chi.Router) {
 		r.Route("/jobs", func(r chi.Router) {
