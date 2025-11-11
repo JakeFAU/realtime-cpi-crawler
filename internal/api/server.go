@@ -31,7 +31,6 @@ type Server struct {
 	clock      crawler.Clock
 	cfg        config.Config
 	logger     *zap.Logger
-	metrics    *metrics.Collectors
 	progress   *ProgressHandler
 }
 
@@ -42,22 +41,22 @@ func NewServer(
 	idGen crawler.IDGenerator,
 	clock crawler.Clock,
 	cfg config.Config,
-	meters *metrics.Collectors,
 	logger *zap.Logger,
 	progressRepo store.ProgressRepository,
 ) *Server {
+	metrics.Init()
 	s := &Server{
 		jobStore:   jobStore,
 		dispatcher: dispatcher,
 		idGen:      idGen,
 		clock:      clock,
 		cfg:        cfg,
-		metrics:    meters,
 		logger:     logger,
 		progress:   NewProgressHandler(progressRepo, logger.Named("progress_api")),
 	}
 	r := chi.NewRouter()
 	r.Use(requestIDMiddleware)
+	r.Use(metrics.Middleware)
 	r.Use(s.loggingMiddleware)
 	r.Use(s.recoverMiddleware)
 	r.Use(timeoutMiddleware(60 * time.Second))
@@ -67,7 +66,9 @@ func NewServer(
 
 	r.Get("/healthz", s.healthz)
 	r.Get("/readyz", s.readyz)
-	r.Get("/metrics", s.serveMetrics)
+	if cfg.Metrics.Enabled {
+		r.Handle(cfg.Metrics.Path, metrics.Handler())
+	}
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/jobs", s.progress.ListJobs)
 		r.Get("/jobs/{job_id}", s.progress.GetJob)
@@ -104,14 +105,6 @@ func (s *Server) readyz(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }
 
-func (s *Server) serveMetrics(w http.ResponseWriter, r *http.Request) {
-	if s.metrics == nil {
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-	s.metrics.Handler().ServeHTTP(w, r)
-}
-
 func (s *Server) submitCustomJob(w http.ResponseWriter, r *http.Request) {
 	var req customJobRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -133,9 +126,6 @@ func (s *Server) submitCustomJob(w http.ResponseWriter, r *http.Request) {
 		writeError(w, status, err.Error())
 		return
 	}
-	if s.metrics != nil {
-		s.metrics.JobSubmitted("custom")
-	}
 	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": jobID})
 }
 
@@ -156,9 +146,6 @@ func (s *Server) submitStandardJob(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
-	}
-	if s.metrics != nil {
-		s.metrics.JobSubmitted("standard")
 	}
 	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": jobID})
 }
@@ -369,9 +356,6 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 		ww := &responseWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(ww, r)
 		route := routeLabel(r)
-		if s.metrics != nil {
-			s.metrics.ObserveHTTPRequest(r.Method, route, ww.status, time.Since(start))
-		}
 		s.logger.Info("request completed",
 			zap.String("method", r.Method),
 			zap.String("path", route),
