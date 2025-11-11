@@ -127,12 +127,18 @@ jobs:
           fi
 
           gcloud run deploy "$SERVICE_NAME" \
+            --project "$GCP_PROJECT" \
             --region "$GCP_REGION" \
             --image "$IMAGE" \
-            --vpc-connector cr-us-east4 \
+            --platform managed \
+            --max-instances 20 \
+            --memory 1Gi \
+            --cpu 1 \
+            --timeout 60s \
+            --vpc-connector projects/${GCP_PROJECT}/locations/${GCP_REGION}/connectors/cr-us-east4 \
             --vpc-egress private-ranges-only \
             --service-account "main-sa-account@${GCP_PROJECT}.iam.gserviceaccount.com" \
-            --set-env-vars "DB_HOST=10.76.112.3,DB_PORT=5432" \
+            --set-env-vars "DB_HOST=${{ secrets.DB_HOST }},DB_PORT=${{ secrets.DB_PORT }}" \
             --quiet
 
           URL=$(gcloud run services describe "$SERVICE_NAME" --region "$GCP_REGION" --format='value(status.url)')
