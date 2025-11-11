@@ -137,7 +137,7 @@ jobs:
             --timeout 60s \
             --vpc-connector projects/${{ env.GCP_PROJECT }}/locations/${{ env.GCP_REGION }}/connectors/cr-us-east4 \
             --vpc-egress private-ranges-only \
-            --service-account "main-sa-account@${GCP_PROJECT}.iam.gserviceaccount.com" \
+            --service-account "main-sa-account@${{ env.GCP_PROJECT }}.iam.gserviceaccount.com" \
             --set-env-vars "DB_HOST=${{ secrets.DB_HOST }},DB_PORT=${{ secrets.DB_PORT }}" \
             --quiet
 
