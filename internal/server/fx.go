@@ -23,7 +23,6 @@ import (
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/headless/detector"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/id/uuid"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/logging"
-	"github.com/JakeFAU/realtime-cpi-crawler/internal/metrics"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/progress"
 	progresssinks "github.com/JakeFAU/realtime-cpi-crawler/internal/progress/sinks"
 	memorypublisher "github.com/JakeFAU/realtime-cpi-crawler/internal/publisher/memory"
@@ -167,14 +166,13 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		return nil, err
 	}
 
-	meters := metrics.New()
-	progressEmitter, err := setupProgress(ctx, app, meters, app.progressRepo)
+	progressEmitter, err := setupProgress(ctx, app, app.progressRepo)
 	if err != nil {
 		return nil, err
 	}
 
-	app.queue = queueMemory.NewQueue(cfg.Crawler.GlobalQueueDepth).WithMetrics(meters)
-	app.dispatch, err = setupDispatcher(app, jobStore, blobStore, publisher, progressEmitter, meters)
+	app.queue = queueMemory.NewQueue(cfg.Crawler.GlobalQueueDepth)
+	app.dispatch, err = setupDispatcher(app, jobStore, blobStore, publisher, progressEmitter)
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +183,6 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		uuid.NewUUIDGenerator(),
 		system.New(),
 		*cfg,
-		meters,
 		logger.Named("api"),
 		app.progressRepo,
 	)
@@ -257,21 +254,12 @@ func setupPublisher(ctx context.Context, app *App) (crawler.Publisher, error) {
 func setupProgress(
 	ctx context.Context,
 	app *App,
-	meters *metrics.Collectors,
 	progressRepo store.ProgressRepository,
 ) (progress.Emitter, error) {
 	if !app.cfg.Progress.Enabled {
 		return nil, nil
 	}
 	var sinkList []progress.Sink
-	if meters != nil && meters.Registry() != nil {
-		promSink, err := progresssinks.NewPrometheusSink(meters.Registry())
-		if err != nil {
-			app.logger.Warn("prometheus progress sink init failed", zap.Error(err))
-		} else {
-			sinkList = append(sinkList, promSink)
-		}
-	}
 	if progressRepo != nil {
 		sinkList = append(sinkList, progresssinks.NewStoreSink(progressRepo, app.logger.Named("progress_store")))
 	}
@@ -299,7 +287,6 @@ func setupDispatcher(
 	blobStore crawler.BlobStore,
 	publisher crawler.Publisher,
 	progressEmitter progress.Emitter,
-	meters *metrics.Collectors,
 ) (*dispatcher.Dispatcher, error) {
 	hasher := sha256.New()
 	clock := system.New()
@@ -347,7 +334,6 @@ func setupDispatcher(
 			progressEmitter,
 			workerCfg,
 			app.logger.Named("worker").With(zap.Int("index", i)),
-			meters,
 		))
 	}
 	return dispatcher.New(app.queue, workers), nil

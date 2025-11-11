@@ -43,7 +43,6 @@ type Worker struct {
 	idGen           crawler.IDGenerator
 	cfg             Config
 	logger          *zap.Logger
-	meters          *metrics.Collectors
 	progress        progress.Emitter
 }
 
@@ -64,7 +63,6 @@ func New(
 	progressEmitter progress.Emitter,
 	cfg Config,
 	logger *zap.Logger,
-	meters *metrics.Collectors,
 ) *Worker {
 	if cfg.ContentType == "" {
 		cfg.ContentType = "text/html; charset=utf-8"
@@ -87,7 +85,6 @@ func New(
 		idGen:           idGen,
 		cfg:             cfg,
 		logger:          logger,
-		meters:          meters,
 		progress:        progressEmitter,
 	}
 }
@@ -154,7 +151,6 @@ func (w *Worker) processJob(ctx context.Context, item crawler.QueueItem) {
 	if hasUUID {
 		w.emitJobCompletion(jobUUID, status, start, errText)
 	}
-	w.recordJobFinish(status, start)
 }
 
 func (w *Worker) allowFetch(jobID, url string, depth int) bool {
@@ -214,13 +210,13 @@ func (w *Worker) handleURL(
 	if err := w.persistAndPublish(ctx, item.JobID, targetURL, finalResp); err != nil {
 		counters.PagesFailed++
 		w.logger.Error("persist page failed", zap.String("job_id", item.JobID), zap.String("url", targetURL), zap.Error(err))
-		w.recordPage(false, finalResp.UsedHeadless, finalResp.StatusCode, finalResp.Duration)
+		w.recordPage(targetURL, false, len(finalResp.Body))
 		return err
 	}
 
 	counters.PagesSucceeded++
 	w.logger.Debug("page processed", zap.String("job_id", item.JobID), zap.String("url", targetURL))
-	w.recordPage(true, finalResp.UsedHeadless, finalResp.StatusCode, finalResp.Duration)
+	w.recordPage(targetURL, true, len(finalResp.Body))
 	if hasUUID {
 		w.emitFetchEvent(jobUUID, targetURL, finalResp)
 	}
@@ -239,7 +235,7 @@ func (w *Worker) fetchProbe(ctx context.Context, item crawler.QueueItem, url str
 		RespectRobotsProvided: item.Params.RespectRobotsProvided,
 	})
 	if err != nil {
-		w.recordPage(false, false, 0, 0)
+		w.recordPage(url, false, 0)
 		return crawler.FetchResponse{}, fmt.Errorf("probe fetch: %w", err)
 	}
 	return resp, nil
@@ -586,16 +582,10 @@ func (w *Worker) deriveFinalStatus(
 	}
 }
 
-func (w *Worker) recordPage(success, usedHeadless bool, status int, duration time.Duration) {
-	if w.meters == nil {
-		return
+func (w *Worker) recordPage(url string, success bool, bytes int) {
+	statusStr := "success"
+	if !success {
+		statusStr = "error"
 	}
-	w.meters.PageProcessed(success, usedHeadless, status, duration)
-}
-
-func (w *Worker) recordJobFinish(status crawler.JobStatus, start time.Time) {
-	if w.meters == nil {
-		return
-	}
-	w.meters.JobFinished(status, time.Since(start))
+	metrics.ObserveCrawl(url, statusStr, bytes)
 }

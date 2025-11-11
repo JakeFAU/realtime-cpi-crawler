@@ -14,12 +14,14 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/crawler"
+	"github.com/JakeFAU/realtime-cpi-crawler/internal/metrics"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/progress"
 )
 
 // TestWorker_ProcessJob_SuccessFlow ensures a happy path job processes successfully.
 func TestWorker_ProcessJob_SuccessFlow(t *testing.T) {
 	t.Parallel()
+	metrics.Init()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -72,7 +74,6 @@ func TestWorker_ProcessJob_SuccessFlow(t *testing.T) {
 			Topic:       "jobs",
 		},
 		zap.NewNop(),
-		nil,
 	)
 
 	go w.Run(ctx)
@@ -99,6 +100,7 @@ func TestWorker_ProcessJob_SuccessFlow(t *testing.T) {
 // TestWorker_ProcessJob_PublishFailureMarksJobFailed verifies publish errors mark jobs failed.
 func TestWorker_ProcessJob_PublishFailureMarksJobFailed(t *testing.T) {
 	t.Parallel()
+	metrics.Init()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -149,7 +151,6 @@ func TestWorker_ProcessJob_PublishFailureMarksJobFailed(t *testing.T) {
 			Topic:       "jobs",
 		},
 		zap.NewNop(),
-		nil,
 	)
 
 	go w.Run(ctx)
@@ -166,6 +167,7 @@ func TestWorker_ProcessJob_PublishFailureMarksJobFailed(t *testing.T) {
 // TestWorker_ProcessJob_HeadlessPromotionApplied confirms detector-triggered promotions.
 func TestWorker_ProcessJob_HeadlessPromotionApplied(t *testing.T) {
 	t.Parallel()
+	metrics.Init()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -227,7 +229,6 @@ func TestWorker_ProcessJob_HeadlessPromotionApplied(t *testing.T) {
 			Topic:       "jobs",
 		},
 		zap.NewNop(),
-		nil,
 	)
 
 	go w.Run(ctx)
@@ -245,6 +246,7 @@ func TestWorker_ProcessJob_HeadlessPromotionApplied(t *testing.T) {
 // TestWorker_ProcessJob_RetrievalStoreFailure ensures errors from the retrieval store fail the job.
 func TestWorker_ProcessJob_RetrievalStoreFailure(t *testing.T) {
 	t.Parallel()
+	metrics.Init()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -294,7 +296,6 @@ func TestWorker_ProcessJob_RetrievalStoreFailure(t *testing.T) {
 			BlobPrefix:  "pages",
 		},
 		zap.NewNop(),
-		nil,
 	)
 
 	go w.Run(ctx)
@@ -405,6 +406,7 @@ func (f *fakeJobStore) RecordPage(_ context.Context, page crawler.PageRecord) er
 // TestWorkerBuildBlobPath checks blob path prefix handling.
 func TestWorkerBuildBlobPath(t *testing.T) {
 	t.Parallel()
+	metrics.Init()
 
 	ts := time.Date(2025, time.July, 4, 9, 0, 0, 0, time.UTC)
 	w := New(
@@ -423,7 +425,6 @@ func TestWorkerBuildBlobPath(t *testing.T) {
 		nil,
 		Config{BlobPrefix: "/crawl/"},
 		zap.NewNop(),
-		nil,
 	)
 	if got := w.buildBlobPath(ts, "Example.com", "page-1"); got != "crawl/202507/04/09/host=example.com/id=page-1" {
 		t.Fatalf("unexpected blob path: %s", got)
@@ -437,8 +438,9 @@ func TestWorkerBuildBlobPath(t *testing.T) {
 // TestWorkerAllowHelpers ensures policy hooks are honored.
 func TestWorkerAllowHelpers(t *testing.T) {
 	t.Parallel()
+	metrics.Init()
 
-	w := New(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, Config{}, zap.NewNop(), nil)
+	w := New(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, Config{}, zap.NewNop())
 	if !w.allowFetch("job", "url", 0) || !w.allowHeadless("job", "url", 0) {
 		t.Fatal("expected allows with nil policy")
 	}

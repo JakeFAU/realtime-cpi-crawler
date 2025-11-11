@@ -23,8 +23,15 @@ type Config struct {
 	Database     DatabaseConfig                   `mapstructure:"database"`
 	PubSub       PubSubConfig                     `mapstructure:"pubsub"`
 	Logging      LoggingConfig                    `mapstructure:"logging"`
+	Metrics      MetricsConfig                    `mapstructure:"metrics"`
 	Progress     ProgressConfig                   `mapstructure:"progress"`
 	StandardJobs map[string]crawler.JobParameters `mapstructure:"standard_jobs"`
+}
+
+// MetricsConfig controls Prometheus metrics exposition.
+type MetricsConfig struct {
+	Enabled bool   `mapstructure:"enabled"`
+	Path    string `mapstructure:"path"`
 }
 
 // ServerConfig controls HTTP server behavior.
@@ -167,6 +174,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("storage.local.base_dir", "tmp/storage")
 	v.SetDefault("database.table", "retrievals")
 	v.SetDefault("logging.development", true)
+	v.SetDefault("metrics.enabled", true)
+	v.SetDefault("metrics.path", "/metrics")
 	v.SetDefault("progress.enabled", true)
 	v.SetDefault("progress.buffer_size", 4096)
 	v.SetDefault("progress.batch.max_events", 1000)

@@ -42,8 +42,9 @@ func TestServer_SubmitCustomJob_Succeeds(t *testing.T) {
 			TimeoutSeconds: 30,
 		},
 		Logging: config.LoggingConfig{Development: true},
+		Metrics: config.MetricsConfig{Enabled: true, Path: "/metrics"},
 	}
-	server := NewServer(jobStore, dispatch, idGen, clock, cfg, metrics.New(), zap.NewNop(), nil)
+	server := NewServer(jobStore, dispatch, idGen, clock, cfg, zap.NewNop(), nil)
 
 	reqBody := []byte(`{"urls":["https://example.com"]}`)
 	req := httptest.NewRequest(http.MethodPost, "/v1/jobs/custom", bytes.NewReader(reqBody))
@@ -168,6 +169,7 @@ func TestServer_SubmitStandardJob_Succeeds(t *testing.T) {
 			TimeoutSeconds: 30,
 		},
 		Logging: config.LoggingConfig{Development: true},
+		Metrics: config.MetricsConfig{Enabled: true, Path: "/metrics"},
 		StandardJobs: map[string]crawler.JobParameters{
 			"price-refresh": {
 				URLs:            []string{"https://example.com"},
@@ -181,7 +183,6 @@ func TestServer_SubmitStandardJob_Succeeds(t *testing.T) {
 		&fakeIDGen{ids: []string{"std-job"}},
 		&fakeClock{now: time.Unix(50, 0)},
 		cfg,
-		metrics.New(),
 		zap.NewNop(),
 		nil,
 	)
@@ -215,6 +216,7 @@ func TestServer_GetJobResult_ListPagesError(t *testing.T) {
 // TestServer_MetricsEndpointExportsRegistry validates /metrics exposes Prometheus data.
 func TestServer_MetricsEndpointExportsRegistry(t *testing.T) {
 	t.Parallel()
+	metrics.Init()
 
 	server := newTestServer()
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
@@ -227,7 +229,7 @@ func TestServer_MetricsEndpointExportsRegistry(t *testing.T) {
 	server.Handler().ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code)
-	require.Contains(t, rec.Body.String(), "webcrawler_http_requests_total")
+	require.Contains(t, rec.Body.String(), "http_requests_total")
 }
 
 // TestServer_APIKeyMiddleware ensures API key protection guards routes when enabled.
@@ -246,6 +248,7 @@ func TestServer_APIKeyMiddleware(t *testing.T) {
 			TimeoutSeconds: 30,
 		},
 		Logging: config.LoggingConfig{Development: true},
+		Metrics: config.MetricsConfig{Enabled: true, Path: "/metrics"},
 		Auth: config.AuthConfig{
 			Enabled: true,
 			APIKey:  "secret",
@@ -257,7 +260,6 @@ func TestServer_APIKeyMiddleware(t *testing.T) {
 		&fakeIDGen{},
 		&fakeClock{now: time.Unix(100, 0)},
 		cfg,
-		metrics.New(),
 		zap.NewNop(),
 		nil,
 	)
@@ -440,6 +442,7 @@ func newTestServerWithStore(jobStore crawler.JobStore) *Server {
 			TimeoutSeconds: 30,
 		},
 		Logging: config.LoggingConfig{Development: true},
+		Metrics: config.MetricsConfig{Enabled: true, Path: "/metrics"},
 		StandardJobs: map[string]crawler.JobParameters{
 			"price-refresh": {
 				URLs:            []string{"https://example.com"},
@@ -453,7 +456,6 @@ func newTestServerWithStore(jobStore crawler.JobStore) *Server {
 		&fakeIDGen{},
 		&fakeClock{now: time.Unix(100, 0)},
 		cfg,
-		metrics.New(),
 		zap.NewNop(),
 		nil,
 	)
