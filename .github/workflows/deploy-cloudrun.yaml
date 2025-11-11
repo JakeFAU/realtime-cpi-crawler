@@ -128,7 +128,16 @@ jobs:
           DB_PORT: ${{ secrets.DB_PORT }}
           CRAWLER_DATABASE_DSN: ${{ secrets.CRAWLER_DATABASE_DSN }}
         run: |
-          export APP_IMAGE GCP_PROJECT GCP_REGION DB_HOST DB_PORT CRAWLER_DATABASE_DSN
+          # Assign the value from IMAGE_OUT to the APP_IMAGE var used by the template
+          export APP_IMAGE="${IMAGE_OUT}"
+
+          # These other variables are already set by the step's 'env' block,
+          # but exporting them ensures envsubst can access them.
+          export GCP_PROJECT GCP_REGION DB_HOST DB_PORT CRAWLER_DATABASE_DSN
+
+          # Debug line (optional): Print the variables to confirm they are set
+          echo "--- Deploying Image: $APP_IMAGE"
+          echo "--- To Project: $GCP_PROJECT"
 
           envsubst < cloudrun-service.yaml.tmpl > service.yaml
 
