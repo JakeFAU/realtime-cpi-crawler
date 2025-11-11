@@ -13,7 +13,7 @@ func TestSanitizeSite(t *testing.T) {
 		expected string
 	}{
 		{"standard http", "http://example.com/path", "example.com"},
-		{"standard https", "https.://Example.com/path", "example.com"},
+		{"standard https", "https://Example.com/path", "example.com"},
 		{"no scheme", "example.com/path", "example.com"},
 		{"just host", "example.com", "example.com"},
 		{"host with port", "example.com:8080", "example.com"},
