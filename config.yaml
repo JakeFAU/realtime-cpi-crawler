@@ -27,6 +27,8 @@ storage:
   bucket: ""
   prefix: "crawl"
   content_type: "text/html; charset=utf-8"
+  local:
+    base_dir: "tmp/storage"
 
 database:
   dsn: ""

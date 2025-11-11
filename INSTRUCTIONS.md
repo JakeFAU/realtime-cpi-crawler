@@ -82,10 +82,12 @@ headless:
 
 ```yaml
 storage:
-  backend: "memory"
+  backend: "local"
   bucket: ""
   prefix: "crawl"
   content_type: "text/html; charset=utf-8"
+  local:
+    base_dir: "tmp/storage"
 
 database:
   dsn: ""
@@ -99,8 +101,9 @@ pubsub:
   topic_name: ""
 ```
 
-- `storage.backend` picks the implementation (`memory` or `gcs`).
+- `storage.backend` picks the implementation (`memory`, `gcs`, or `local`).
 - `storage.bucket` names the GCS bucket when `storage.backend = gcs`.
+- `storage.local.base_dir` specifies the directory to store files when `storage.backend = local`.
 - `storage.prefix` scopes blob paths (`<prefix>/crawl/...`); leave blank to write at the root.
 - `storage.content_type` is stored alongside each blob for downstream consumers.
 - `database.*` controls the Postgres pool used to persist retrieval rows (set `dsn` to enable).
