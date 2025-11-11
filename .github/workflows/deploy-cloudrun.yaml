@@ -126,20 +126,16 @@ jobs:
             IMAGE="${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT }}/${{ env.GAR_REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
           fi
 
-          gcloud run deploy "${{ env.SERVICE_NAME }}" \
-            --project "${{ env.GCP_PROJECT }}" \
-            --region "${{ env.GCP_REGION }}" \
+          gcloud run deploy "$SERVICE_NAME" \
+            --region "$GCP_REGION" \
             --image "$IMAGE" \
-            --platform managed \
-            --max-instances 20 \
-            --memory 1Gi \
-            --cpu 1 \
-            --timeout 60s \
-            --set-env-vars "GO_ENV=production" \
-            --service-account "main-sa-account@realtime-cpi.iam.gserviceaccount.com" \
+            --vpc-connector cr-us-east4 \
+            --vpc-egress private-ranges-only \
+            --service-account "main-sa-account@${GCP_PROJECT}.iam.gserviceaccount.com" \
+            --set-env-vars "DB_HOST=10.76.112.3,DB_PORT=5432" \
             --quiet
 
-          URL=$(gcloud run services describe "${{ env.SERVICE_NAME }}" --region "${{ env.GCP_REGION }}" --format='value(status.url)')
+          URL=$(gcloud run services describe "$SERVICE_NAME" --region "$GCP_REGION" --format='value(status.url)')
           echo "url=$URL" >> "$GITHUB_OUTPUT"
 
     concurrency:
