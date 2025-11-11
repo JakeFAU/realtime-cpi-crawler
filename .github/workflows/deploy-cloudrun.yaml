@@ -126,8 +126,8 @@ jobs:
             IMAGE="${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT }}/${{ env.GAR_REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
           fi
 
-          gcloud run deploy "$SERVICE_NAME" \
-            --project ${{ env.GCP_PROJECT }} \
+          gcloud run deploy "${{ env.SERVICE_NAME }}" \
+            --project "${{ env.GCP_PROJECT }}" \
             --region "${{ env.GCP_REGION }}" \
             --image "$IMAGE" \
             --platform managed \
