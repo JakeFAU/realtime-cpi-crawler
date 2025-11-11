@@ -118,30 +118,32 @@ jobs:
         with:
           project_id: ${{ env.GCP_PROJECT }}
 
-      - name: Deploy to Cloud Run (managed)
+      - name: Deploy (multi-container with GMP sidecar)
         id: deploy
+        env:
+          IMAGE_OUT: ${{ needs.build-and-push.outputs.image }}
+          GCP_PROJECT: ${{ env.GCP_PROJECT }}
+          GCP_REGION: ${{ env.GCP_REGION }}
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          CRAWLER_DATABASE_DSN: ${{ secrets.CRAWLER_DATABASE_DSN }}
         run: |
-          IMAGE="${{ needs.build-and-push.outputs.image }}"
-          if [ -z "$IMAGE" ]; then
-            IMAGE="${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT }}/${{ env.GAR_REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
-          fi
+          APP_IMAGE="${IMAGE_OUT:-${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT}/${GAR_REPOSITORY}/${IMAGE_NAME}:${GITHUB_SHA}}"
 
-          gcloud run deploy "${{ env.SERVICE_NAME }}" \
-            --project "${{ env.GCP_PROJECT }}" \
-            --region "${{ env.GCP_REGION }}" \
-            --image "$IMAGE" \
-            --platform managed \
-            --max-instances 20 \
-            --memory 1Gi \
-            --cpu 1 \
-            --timeout 60s \
-            --vpc-connector projects/${{ env.GCP_PROJECT }}/locations/${{ env.GCP_REGION }}/connectors/cr-us-east4 \
-            --vpc-egress private-ranges-only \
-            --service-account "main-sa-account@${{ env.GCP_PROJECT }}.iam.gserviceaccount.com" \
-            --set-env-vars "DB_HOST=${{ secrets.DB_HOST }},DB_PORT=${{ secrets.DB_PORT }}" \
-            --quiet
+          sed \
+            -e "s|\${APP_IMAGE}|${APP_IMAGE}|g" \
+            -e "s|\${GCP_PROJECT}|${GCP_PROJECT}|g" \
+            -e "s|\${GCP_REGION}|${GCP_REGION}|g" \
+            -e "s|\${DB_HOST}|${DB_HOST}|g" \
+            -e "s|\${DB_PORT}|${DB_PORT}|g" \
+            -e "s|\${CRAWLER_DATABASE_DSN}|${CRAWLER_DATABASE_DSN}|g" \
+            cloudrun-service.yaml.tmpl > service.yaml
 
-          URL=$(gcloud run services describe "${{ env.SERVICE_NAME }}" --region "${{ env.GCP_REGION }}" --format='value(status.url)')
+          gcloud run services replace service.yaml \
+            --project "${GCP_PROJECT}" \
+            --region "${GCP_REGION}"
+
+          URL=$(gcloud run services describe crawler-api --region "${GCP_REGION}" --format='value(status.url)')
           echo "url=$URL" >> "$GITHUB_OUTPUT"
 
     concurrency:

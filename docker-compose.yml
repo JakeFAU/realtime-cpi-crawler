@@ -5,11 +5,14 @@ services:
       dockerfile: Dockerfile
     image: realtime-cpi-crawler:local
     container_name: realtime-cpi-crawler
+    env_file:
+      - .env
     environment:
       - APP_PORT=8080
       - PORT=8080
       - CHROME_PATH=/usr/bin/chromium
       - CHROME_ARGS=--headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage --remote-allow-origins=*
+      - CRAWLER_DATABASE_DSN=${CRAWLER_DATABASE_DSN:-}
       # Add any Viper-backed env here:
       # - LOG_LEVEL=info
       # - STORAGE_DIR=/data   # if you write fetched pages locally
