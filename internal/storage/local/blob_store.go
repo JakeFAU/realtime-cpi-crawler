@@ -64,6 +64,12 @@ func (s *BlobStore) PutObject(_ context.Context, path string, _ string, data []b
 
 	fullPath := filepath.Join(s.baseDir, path)
 
+	// Clean the path and verify it's within baseDir to prevent path traversal.
+	cleanBaseDir := filepath.Clean(s.baseDir)
+	cleanFullPath := filepath.Clean(fullPath)
+	if !strings.HasPrefix(cleanFullPath, cleanBaseDir+string(filepath.Separator)) {
+		return "", fmt.Errorf("path traversal detected")
+	}
 	// Create parent directories if they don't exist.
 	dir := filepath.Dir(fullPath)
 	if err := os.MkdirAll(dir, 0o750); err != nil {
