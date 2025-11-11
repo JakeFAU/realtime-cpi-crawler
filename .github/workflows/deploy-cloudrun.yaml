@@ -127,8 +127,8 @@ jobs:
           fi
 
           gcloud run deploy "$SERVICE_NAME" \
-            --project "$GCP_PROJECT" \
-            --region "$GCP_REGION" \
+            --project ${{ env.GCP_PROJECT }} \
+            --region "${{ env.GCP_REGION }}" \
             --image "$IMAGE" \
             --platform managed \
             --max-instances 20 \
@@ -141,7 +141,7 @@ jobs:
             --set-env-vars "DB_HOST=${{ secrets.DB_HOST }},DB_PORT=${{ secrets.DB_PORT }}" \
             --quiet
 
-          URL=$(gcloud run services describe "$SERVICE_NAME" --region "$GCP_REGION" --format='value(status.url)')
+          URL=$(gcloud run services describe "${{ env.SERVICE_NAME }}" --region "${{ env.GCP_REGION }}" --format='value(status.url)')
           echo "url=$URL" >> "$GITHUB_OUTPUT"
 
     concurrency:
