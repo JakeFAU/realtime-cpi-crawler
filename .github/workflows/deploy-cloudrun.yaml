@@ -128,16 +128,9 @@ jobs:
           DB_PORT: ${{ secrets.DB_PORT }}
           CRAWLER_DATABASE_DSN: ${{ secrets.CRAWLER_DATABASE_DSN }}
         run: |
-          APP_IMAGE="${IMAGE_OUT:-${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT}/${GAR_REPOSITORY}/${IMAGE_NAME}:${GITHUB_SHA}}"
+          export APP_IMAGE GCP_PROJECT GCP_REGION DB_HOST DB_PORT CRAWLER_DATABASE_DSN
 
-          sed \
-            -e "s|\${APP_IMAGE}|${APP_IMAGE}|g" \
-            -e "s|\${GCP_PROJECT}|${GCP_PROJECT}|g" \
-            -e "s|\${GCP_REGION}|${GCP_REGION}|g" \
-            -e "s|\${DB_HOST}|${DB_HOST}|g" \
-            -e "s|\${DB_PORT}|${DB_PORT}|g" \
-            -e "s|\${CRAWLER_DATABASE_DSN}|${CRAWLER_DATABASE_DSN}|g" \
-            cloudrun-service.yaml.tmpl > service.yaml
+          envsubst < cloudrun-service.yaml.tmpl > service.yaml
 
           gcloud run services replace service.yaml \
             --project "${GCP_PROJECT}" \
