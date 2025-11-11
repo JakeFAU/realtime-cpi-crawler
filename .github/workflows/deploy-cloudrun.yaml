@@ -135,8 +135,10 @@ jobs:
             --memory 1Gi \
             --cpu 1 \
             --timeout 60s \
-            --set-env-vars "GO_ENV=production" \
-            --service-account "main-sa-account@realtime-cpi.iam.gserviceaccount.com" \
+            --vpc-connector projects/${{ env.GCP_PROJECT }}/locations/${{ env.GCP_REGION }}/connectors/cr-us-east4 \
+            --vpc-egress private-ranges-only \
+            --service-account "main-sa-account@${{ env.GCP_PROJECT }}.iam.gserviceaccount.com" \
+            --set-env-vars "DB_HOST=${{ secrets.DB_HOST }},DB_PORT=${{ secrets.DB_PORT }}" \
             --quiet
 
           URL=$(gcloud run services describe "${{ env.SERVICE_NAME }}" --region "${{ env.GCP_REGION }}" --format='value(status.url)')
