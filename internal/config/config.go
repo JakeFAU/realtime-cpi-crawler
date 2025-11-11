@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/crawler"
+	"github.com/JakeFAU/realtime-cpi-crawler/internal/storage/local"
 )
 
 // Config captures all service configuration knobs loaded via Viper.
@@ -62,10 +63,11 @@ type HeadlessConfig struct {
 
 // StorageConfig sets paths and content types for blob persistence.
 type StorageConfig struct {
-	Backend     string `mapstructure:"backend"`
-	Bucket      string `mapstructure:"bucket"`
-	Prefix      string `mapstructure:"prefix"`
-	ContentType string `mapstructure:"content_type"`
+	Backend     string       `mapstructure:"backend"`
+	Bucket      string       `mapstructure:"bucket"`
+	Prefix      string       `mapstructure:"prefix"`
+	ContentType string       `mapstructure:"content_type"`
+	Local       local.Config `mapstructure:"local"`
 }
 
 // DatabaseConfig controls Postgres connectivity for retrieval persistence.
@@ -162,6 +164,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("storage.backend", "memory")
 	v.SetDefault("storage.prefix", "crawl")
 	v.SetDefault("storage.content_type", "text/html; charset=utf-8")
+	v.SetDefault("storage.local.base_dir", "tmp/storage")
 	v.SetDefault("database.table", "retrievals")
 	v.SetDefault("logging.development", true)
 	v.SetDefault("progress.enabled", true)
@@ -206,8 +209,12 @@ func (c Config) Validate() error {
 		if strings.TrimSpace(c.Storage.Bucket) == "" {
 			return fmt.Errorf("storage.bucket must be set when storage.backend is gcs")
 		}
+	case "local":
+		if strings.TrimSpace(c.Storage.Local.BaseDir) == "" {
+			return fmt.Errorf("storage.local.base_dir must be set when storage.backend is local")
+		}
 	default:
-		return fmt.Errorf("storage.backend must be either memory or gcs")
+		return fmt.Errorf("storage.backend must be either memory, gcs, or local")
 	}
 	if c.Database.DSN != "" && strings.TrimSpace(c.Database.Table) == "" {
 		return fmt.Errorf("database.table must be set when database.dsn is provided")

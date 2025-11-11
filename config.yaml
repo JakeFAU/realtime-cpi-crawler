@@ -23,21 +23,25 @@ headless:
   promotion_threshold: 2048
 
 storage:
-  backend: "memory"
-  bucket: ""
+  backend: "gcs"
+  bucket: "rcpi_scrape_bucket"
   prefix: "crawl"
   content_type: "text/html; charset=utf-8"
+  local:
+    base_dir: "tmp/storage"
 
 database:
-  dsn: ""
-  table: "retrievals"
+  dsn: "" # set via CRAWLER_DATABASE_DSN for trial runs
+  table: "crawl"
+  job_runs_table: "job_runs"
+  job_stats_table: "job_stats"
   max_conns: 4
   min_conns: 0
   max_conn_lifetime: 0s
 
 pubsub:
-  project_id: ""
-  topic_name: ""
+  project_id: "realtime-cpi"
+  topic_name: "real-cpi-ai-handoff"
 
 logging:
   development: true
@@ -52,12 +56,13 @@ progress:
     max_wait_ms: 500
 
 standard_jobs:
-  sample:
+  trial_run:
     urls:
-      - "https://httpbin.org/status/200"
-      - "https://httpbin.org/html"
+      - "https://www.amazon.com/"
     max_depth: 1
-    max_pages: 5
-    budget_seconds: 30
+    max_pages: 25
+    budget_seconds: 120
     headless_allowed: true
     respect_robots: true
+    tags:
+      environment: "trial"

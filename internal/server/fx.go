@@ -30,6 +30,7 @@ import (
 	gcppublisher "github.com/JakeFAU/realtime-cpi-crawler/internal/publisher/pubsub"
 	queueMemory "github.com/JakeFAU/realtime-cpi-crawler/internal/queue/memory"
 	gcsstorage "github.com/JakeFAU/realtime-cpi-crawler/internal/storage/gcs"
+	localstorage "github.com/JakeFAU/realtime-cpi-crawler/internal/storage/local"
 	memoryStorage "github.com/JakeFAU/realtime-cpi-crawler/internal/storage/memory"
 	pgstore "github.com/JakeFAU/realtime-cpi-crawler/internal/storage/postgres"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/store"
@@ -206,6 +207,11 @@ func setupStorage(ctx context.Context, app *App) (crawler.BlobStore, error) {
 		})
 		if err != nil {
 			return nil, fmt.Errorf("gcs blob store init failed: %w", err)
+		}
+	case "local":
+		blobStore, err = localstorage.New(app.cfg.Storage.Local)
+		if err != nil {
+			return nil, fmt.Errorf("local blob store init failed: %w", err)
 		}
 	default:
 		blobStore = memoryStorage.NewBlobStore()
