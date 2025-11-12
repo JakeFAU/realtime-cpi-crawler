@@ -54,7 +54,17 @@ type App struct {
 
 // NewApp creates a new App with the given configuration.
 func NewApp(cfg *config.Config, logger *zap.Logger) (*App, error) {
-	logger.Info("Creating application", zap.Any("config", cfg))
+	// Define a struct for logging only non-sensitive config fields
+	type SanitizedConfig struct {
+		ServerPort int    `json:"server_port"`
+		Environment string `json:"environment,omitempty"`
+	}
+	safeCfg := SanitizedConfig{
+		ServerPort: cfg.Server.Port,
+	}
+	// If your config has an Environment field, log it; otherwise, remove this line.
+	// safeCfg.Environment = cfg.Environment
+	logger.Info("Creating application", zap.Any("config", safeCfg))
 	return &App{
 		cfg:    cfg,
 		logger: logger,
