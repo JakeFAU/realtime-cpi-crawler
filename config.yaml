@@ -35,8 +35,6 @@ database:
   retrieval_table: crawler
   progress_table: job_runs
   stats_table: job_stats
-  job_runs_table: "job_runs"
-  job_stats_table: "job_stats"
   max_conns: 4
   min_conns: 0
   max_conn_lifetime: 0s
