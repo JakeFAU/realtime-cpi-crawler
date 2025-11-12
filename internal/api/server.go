@@ -102,7 +102,6 @@ func (s *Server) healthz(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) readyz(w http.ResponseWriter, _ *http.Request) {
-	s.logger.Debug("readyz check")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }
 
