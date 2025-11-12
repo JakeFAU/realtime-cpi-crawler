@@ -255,7 +255,6 @@ func setupDatabase(ctx context.Context, app *App) error {
 	if err != nil {
 		return fmt.Errorf("progress store init failed: %w", err)
 	}
-	app.logger.Info("progress store initialized", zap.String("table", app.cfg.Database.ProgressTable))
 	return nil
 }
 
