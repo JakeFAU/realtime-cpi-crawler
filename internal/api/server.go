@@ -97,7 +97,6 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) healthz(w http.ResponseWriter, _ *http.Request) {
-	s.logger.Debug("healthz check")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
