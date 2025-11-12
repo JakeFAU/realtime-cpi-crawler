@@ -62,8 +62,6 @@ func NewApp(cfg *config.Config, logger *zap.Logger) (*App, error) {
 	safeCfg := SanitizedConfig{
 		ServerPort: cfg.Server.Port,
 	}
-	// If your config has an Environment field, log it; otherwise, remove this line.
-	// safeCfg.Environment = cfg.Environment
 	logger.Info("Creating application", zap.Any("config", safeCfg))
 	return &App{
 		cfg:    cfg,
