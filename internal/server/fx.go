@@ -54,6 +54,15 @@ type App struct {
 
 // NewApp creates a new App with the given configuration.
 func NewApp(cfg *config.Config, logger *zap.Logger) (*App, error) {
+	// Define a struct for logging only non-sensitive config fields
+	type SanitizedConfig struct {
+		ServerPort  int    `json:"server_port"`
+		Environment string `json:"environment,omitempty"`
+	}
+	safeCfg := SanitizedConfig{
+		ServerPort: cfg.Server.Port,
+	}
+	logger.Info("Creating application", zap.Any("config", safeCfg))
 	return &App{
 		cfg:    cfg,
 		logger: logger,
@@ -62,6 +71,7 @@ func NewApp(cfg *config.Config, logger *zap.Logger) (*App, error) {
 
 // Run starts the application and blocks until the context is canceled.
 func (a *App) Run(ctx context.Context) error {
+	a.logger.Info("application started")
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -150,6 +160,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		return nil, fmt.Errorf("app init failed: %w", err)
 	}
 
+	app.logger.Info("building application dependencies")
 	jobStore := memoryStorage.NewJobStore()
 
 	blobStore, err := setupStorage(ctx, app)
@@ -195,6 +206,7 @@ func setupStorage(ctx context.Context, app *App) (crawler.BlobStore, error) {
 	var err error
 	switch app.cfg.Storage.Backend {
 	case "gcs":
+		app.logger.Info("using GCS storage backend")
 		app.storage, err = storage.NewClient(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("gcs client init failed: %w", err)
@@ -205,12 +217,16 @@ func setupStorage(ctx context.Context, app *App) (crawler.BlobStore, error) {
 		if err != nil {
 			return nil, fmt.Errorf("gcs blob store init failed: %w", err)
 		}
+		app.logger.Debug("GCS storage backend", zap.String("bucket", app.cfg.Storage.Bucket))
 	case "local":
+		app.logger.Info("using local storage backend")
 		blobStore, err = localstorage.New(app.cfg.Storage.Local)
 		if err != nil {
 			return nil, fmt.Errorf("local blob store init failed: %w", err)
 		}
+		app.logger.Debug("local storage backend", zap.String("path", app.cfg.Storage.Local.BaseDir))
 	default:
+		app.logger.Info("using in-memory storage backend")
 		blobStore = memoryStorage.NewBlobStore()
 	}
 	return blobStore, nil
@@ -218,12 +234,13 @@ func setupStorage(ctx context.Context, app *App) (crawler.BlobStore, error) {
 
 func setupDatabase(ctx context.Context, app *App) error {
 	if app.cfg.Database.DSN == "" {
+		app.logger.Warn("No DSN specified for database, skipping retrieval store and progress repository initialization")
 		return nil
 	}
 	var err error
 	app.retrievalStore, err = pgstore.NewRetrievalStore(ctx, pgstore.RetrievalStoreConfig{
 		DSN:             app.cfg.Database.DSN,
-		Table:           app.cfg.Database.Table,
+		Table:           app.cfg.Database.RetrievalTable,
 		MaxConns:        app.cfg.Database.MaxConns,
 		MinConns:        app.cfg.Database.MinConns,
 		MaxConnLifetime: app.cfg.Database.MaxConnLifetime,
@@ -231,6 +248,7 @@ func setupDatabase(ctx context.Context, app *App) error {
 	if err != nil {
 		return fmt.Errorf("retrieval store init failed: %w", err)
 	}
+	app.logger.Info("retrieval store initialized", zap.String("table", app.cfg.Database.RetrievalTable))
 	app.progressRepo, err = pgstore.NewProgressStore(ctx, app.cfg.Database.DSN)
 	if err != nil {
 		return fmt.Errorf("progress store init failed: %w", err)
@@ -240,6 +258,7 @@ func setupDatabase(ctx context.Context, app *App) error {
 
 func setupPublisher(ctx context.Context, app *App) (crawler.Publisher, error) {
 	if app.cfg.PubSub.TopicName == "" || app.cfg.PubSub.ProjectID == "" {
+		app.logger.Warn("No Pub/Sub topic configured, using in-memory publisher")
 		return memorypublisher.New(), nil
 	}
 	var err error
@@ -248,6 +267,11 @@ func setupPublisher(ctx context.Context, app *App) (crawler.Publisher, error) {
 		return nil, fmt.Errorf("pubsub client init failed: %w", err)
 	}
 	app.pubsubTopic = app.pubsubClient.Topic(app.cfg.PubSub.TopicName)
+	app.logger.Info(
+		"Pub/Sub publisher initialized",
+		zap.String("project", app.cfg.PubSub.ProjectID),
+		zap.String("topic", app.cfg.PubSub.TopicName),
+	)
 	return gcppublisher.New(app.pubsubTopic), nil
 }
 
@@ -257,16 +281,26 @@ func setupProgress(
 	progressRepo store.ProgressRepository,
 ) (progress.Emitter, error) {
 	if !app.cfg.Progress.Enabled {
+		app.logger.Info("progress tracking disabled")
 		return nil, nil
 	}
 	var sinkList []progress.Sink
 	if progressRepo != nil {
-		sinkList = append(sinkList, progresssinks.NewStoreSink(progressRepo, app.logger.Named("progress_store")))
+		sinkList = append(
+			sinkList,
+			progresssinks.NewStoreSink(progressRepo, app.logger.Named("progress_store")),
+		)
+		app.logger.Debug("Added progress store sink")
 	}
 	if app.cfg.Progress.LogEnabled {
-		sinkList = append(sinkList, progresssinks.NewLogSink(app.logger.Named("progress_log")))
+		sinkList = append(
+			sinkList,
+			progresssinks.NewLogSink(app.logger.Named("progress_log")),
+		)
+		app.logger.Debug("Added progress log sink")
 	}
 	if len(sinkList) == 0 {
+		app.logger.Warn("progress tracking enabled but no sinks configured")
 		return nil, nil
 	}
 	hubCfg := progress.Config{
@@ -278,6 +312,12 @@ func setupProgress(
 		Logger:         app.logger.Named("progress_hub"),
 	}
 	app.progressHub = progress.NewHub(hubCfg, sinkList...)
+	app.logger.Info("progress hub initialized",
+		zap.Int("buffer_size", hubCfg.BufferSize),
+		zap.Int("max_batch_events", hubCfg.MaxBatchEvents),
+		zap.Duration("max_batch_wait", hubCfg.MaxBatchWait),
+		zap.Duration("sink_timeout", hubCfg.SinkTimeout),
+	)
 	return app.progressHub, nil
 }
 
@@ -297,6 +337,7 @@ func setupDispatcher(
 		RespectRobots: !app.cfg.Crawler.IgnoreRobots,
 		Timeout:       time.Duration(app.cfg.HTTP.TimeoutSeconds) * time.Second,
 	})
+	app.logger.Info("using colly probe fetcher", zap.String("user_agent", app.cfg.Crawler.UserAgent))
 	var headless crawler.Fetcher
 	if app.cfg.Headless.Enabled {
 		var err error
@@ -308,6 +349,7 @@ func setupDispatcher(
 		if err != nil {
 			app.logger.Warn("headless fetcher init failed", zap.Error(err))
 		}
+		app.logger.Info("using headless fetcher", zap.Int("max_parallel", app.cfg.Headless.MaxParallel))
 	}
 
 	workerCfg := worker.Config{
@@ -315,6 +357,11 @@ func setupDispatcher(
 		BlobPrefix:  app.cfg.Storage.Prefix,
 		Topic:       app.cfg.PubSub.TopicName,
 	}
+	app.logger.Info("worker config",
+		zap.String("content_type", workerCfg.ContentType),
+		zap.String("blob_prefix", workerCfg.BlobPrefix),
+		zap.String("topic", workerCfg.Topic),
+	)
 
 	var workers []*worker.Worker
 	for i := 0; i < app.cfg.Crawler.Concurrency; i++ {
