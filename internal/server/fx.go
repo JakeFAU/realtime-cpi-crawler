@@ -56,7 +56,7 @@ type App struct {
 func NewApp(cfg *config.Config, logger *zap.Logger) (*App, error) {
 	// Define a struct for logging only non-sensitive config fields
 	type SanitizedConfig struct {
-		ServerPort int    `json:"server_port"`
+		ServerPort  int    `json:"server_port"`
 		Environment string `json:"environment,omitempty"`
 	}
 	safeCfg := SanitizedConfig{
@@ -270,7 +270,11 @@ func setupPublisher(ctx context.Context, app *App) (crawler.Publisher, error) {
 		return nil, fmt.Errorf("pubsub client init failed: %w", err)
 	}
 	app.pubsubTopic = app.pubsubClient.Topic(app.cfg.PubSub.TopicName)
-	app.logger.Info("Pub/Sub publisher initialized", zap.String("project", app.cfg.PubSub.ProjectID), zap.String("topic", app.cfg.PubSub.TopicName))
+	app.logger.Info(
+		"Pub/Sub publisher initialized",
+		zap.String("project", app.cfg.PubSub.ProjectID),
+		zap.String("topic", app.cfg.PubSub.TopicName),
+	)
 	return gcppublisher.New(app.pubsubTopic), nil
 }
 
