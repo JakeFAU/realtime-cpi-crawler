@@ -269,9 +269,8 @@ func setupPublisher(ctx context.Context, app *App) (crawler.Publisher, error) {
 	if err != nil {
 		return nil, fmt.Errorf("pubsub client init failed: %w", err)
 	}
-	app.logger.Info("pubsub client initialized", zap.String("topic", app.cfg.PubSub.TopicName))
 	app.pubsubTopic = app.pubsubClient.Topic(app.cfg.PubSub.TopicName)
-	app.logger.Info("using Pub/Sub publisher", zap.String("topic", app.cfg.PubSub.TopicName))
+	app.logger.Info("Pub/Sub publisher initialized", zap.String("project", app.cfg.PubSub.ProjectID), zap.String("topic", app.cfg.PubSub.TopicName))
 	return gcppublisher.New(app.pubsubTopic), nil
 }
 
