@@ -311,7 +311,12 @@ func setupProgress(
 		Logger:         app.logger.Named("progress_hub"),
 	}
 	app.progressHub = progress.NewHub(hubCfg, sinkList...)
-	app.logger.Info("progress hub initialized", zap.Any("config", hubCfg))
+	app.logger.Info("progress hub initialized",
+		zap.Int("buffer_size", hubCfg.BufferSize),
+		zap.Int("max_batch_events", hubCfg.MaxBatchEvents),
+		zap.Duration("max_batch_wait", hubCfg.MaxBatchWait),
+		zap.Duration("sink_timeout", hubCfg.SinkTimeout),
+	)
 	return app.progressHub, nil
 }
 
