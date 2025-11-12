@@ -356,7 +356,11 @@ func setupDispatcher(
 		BlobPrefix:  app.cfg.Storage.Prefix,
 		Topic:       app.cfg.PubSub.TopicName,
 	}
-	app.logger.Info("worker config", zap.Any("config", workerCfg))
+	app.logger.Info("worker config",
+		zap.String("content_type", workerCfg.ContentType),
+		zap.String("blob_prefix", workerCfg.BlobPrefix),
+		zap.String("topic", workerCfg.Topic),
+	)
 
 	var workers []*worker.Worker
 	for i := 0; i < app.cfg.Crawler.Concurrency; i++ {
