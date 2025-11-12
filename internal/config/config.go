@@ -80,10 +80,12 @@ type StorageConfig struct {
 // DatabaseConfig controls Postgres connectivity for retrieval persistence.
 type DatabaseConfig struct {
 	DSN             string        `mapstructure:"dsn"`
-	Table           string        `mapstructure:"table"`
 	MaxConns        int32         `mapstructure:"max_conns"`
 	MinConns        int32         `mapstructure:"min_conns"`
 	MaxConnLifetime time.Duration `mapstructure:"max_conn_lifetime"`
+	RetrievalTable  string        `mapstructure:"retrieval_table"`
+	ProgressTable   string        `mapstructure:"progress_table"`
+	StatsTable      string        `mapstructure:"stats_table"`
 }
 
 // PubSubConfig holds metadata for publish-subscribe notifications.
@@ -225,8 +227,14 @@ func (c Config) Validate() error {
 	default:
 		return fmt.Errorf("storage.backend must be either memory, gcs, or local")
 	}
-	if c.Database.DSN != "" && strings.TrimSpace(c.Database.Table) == "" {
-		return fmt.Errorf("database.table must be set when database.dsn is provided")
+	if c.Database.DSN != "" && strings.TrimSpace(c.Database.RetrievalTable) == "" {
+		return fmt.Errorf("database.retrieval_table must be set when database.dsn is provided")
+	}
+	if c.Database.DSN != "" && strings.TrimSpace(c.Database.ProgressTable) == "" {
+		return fmt.Errorf("database.progress_table must be set when database.dsn is provided")
+	}
+	if c.Database.DSN != "" && strings.TrimSpace(c.Database.StatsTable) == "" {
+		return fmt.Errorf("database.stats_table must be set when database.dsn is provided")
 	}
 	if c.PubSub.TopicName != "" && strings.TrimSpace(c.PubSub.ProjectID) == "" {
 		return fmt.Errorf("pubsub.project_id must be set when pubsub.topic_name is configured")

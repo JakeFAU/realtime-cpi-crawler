@@ -44,7 +44,9 @@ storage:
   content_type: text/plain
 database:
   dsn: postgres://user:pass@127.0.0.1/db
-  table: retrievals
+  retrieval_table: crawler
+  progress_table: job_runs
+  stats_table: stats
 logging:
   development: false
 pubsub:
@@ -77,7 +79,13 @@ standard_jobs:
 	if cfg.Storage.Backend != "gcs" || cfg.Storage.Bucket != "crawler" {
 		t.Fatalf("expected gcs storage config, got %+v", cfg.Storage)
 	}
-	if cfg.Database.DSN == "" || cfg.Database.Table != "retrievals" {
+	if cfg.Database.DSN == "" || cfg.Database.RetrievalTable != "crawler" {
+		t.Fatalf("expected database config to load, got %+v", cfg.Database)
+	}
+	if cfg.Database.DSN == "" || cfg.Database.ProgressTable != "job_runs" {
+		t.Fatalf("expected database config to load, got %+v", cfg.Database)
+	}
+	if cfg.Database.DSN == "" || cfg.Database.StatsTable != "stats" {
 		t.Fatalf("expected database config to load, got %+v", cfg.Database)
 	}
 	job, ok := cfg.StandardJobs["price-refresh"]
@@ -219,10 +227,10 @@ func TestConfigValidateErrors(t *testing.T) {
 			cfg: func() Config {
 				c := base
 				c.Database.DSN = "postgres://user:pass@localhost/db"
-				c.Database.Table = ""
+				c.Database.RetrievalTable = ""
 				return c
 			}(),
-			want: "database.table",
+			want: "retrieval_table",
 		},
 		{
 			name: "pubsub missing project",

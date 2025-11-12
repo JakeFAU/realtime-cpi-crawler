@@ -97,15 +97,21 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) healthz(w http.ResponseWriter, _ *http.Request) {
+	s.logger.Debug("healthz check")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (s *Server) readyz(w http.ResponseWriter, _ *http.Request) {
-	// In-memory dependencies are always ready; in future check downstreams.
+	s.logger.Debug("readyz check")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }
 
 func (s *Server) submitCustomJob(w http.ResponseWriter, r *http.Request) {
+	s.logger.Info(
+		"Submit custom job endpoint hit",
+		zap.String("request_id",
+			requestIDFromContext(r.Context())),
+	)
 	var req customJobRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
@@ -130,6 +136,11 @@ func (s *Server) submitCustomJob(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) submitStandardJob(w http.ResponseWriter, r *http.Request) {
+	s.logger.Info(
+		"Submit standard job endpoint hit",
+		zap.String("request_id",
+			requestIDFromContext(r.Context())),
+	)
 	var req standardJobRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
 		writeError(w, http.StatusBadRequest, "missing job name")
@@ -151,6 +162,11 @@ func (s *Server) submitStandardJob(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getJobStatus(w http.ResponseWriter, r *http.Request) {
+	s.logger.Info(
+		"get job status endpoint hit",
+		zap.String("request_id",
+			requestIDFromContext(r.Context())),
+	)
 	jobID := chi.URLParam(r, "job_id")
 	job, err := s.jobStore.GetJob(r.Context(), jobID)
 	if err != nil {
@@ -162,6 +178,12 @@ func (s *Server) getJobStatus(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) getJobResult(w http.ResponseWriter, r *http.Request) {
 	jobID := chi.URLParam(r, "job_id")
+	s.logger.Info(
+		"get job result endpoint hit",
+		zap.String("request_id",
+			requestIDFromContext(r.Context())),
+		zap.String("job_id", jobID),
+	)
 	job, err := s.jobStore.GetJob(r.Context(), jobID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "job not found")
@@ -177,6 +199,12 @@ func (s *Server) getJobResult(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) cancelJob(w http.ResponseWriter, r *http.Request) {
 	jobID := chi.URLParam(r, "job_id")
+	s.logger.Info(
+		"cancel job endpoint hit",
+		zap.String("request_id",
+			requestIDFromContext(r.Context())),
+		zap.String("job_id", jobID),
+	)
 	if err := s.jobStore.UpdateJobStatus(
 		r.Context(),
 		jobID,
@@ -192,6 +220,7 @@ func (s *Server) cancelJob(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) enqueueJob(ctx context.Context, params crawler.JobParameters) (string, error) {
+	s.logger.Debug("enqueueing job", zap.Int("url_count", len(params.URLs)))
 	if len(params.URLs) == 0 {
 		return "", errors.New("at least one URL required")
 	}
@@ -226,6 +255,7 @@ func (s *Server) enqueueJob(ctx context.Context, params crawler.JobParameters) (
 }
 
 func (s *Server) toJobParameters(req customJobRequest) (crawler.JobParameters, error) {
+	s.logger.Debug("converting custom job request to job parameters")
 	if len(req.URLs) == 0 {
 		return crawler.JobParameters{}, errors.New("urls required")
 	}
