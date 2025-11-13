@@ -134,13 +134,14 @@ jobs:
           DB_HOST: ${{ secrets.DB_HOST }}
           DB_PORT: ${{ secrets.DB_PORT }}
           CRAWLER_DATABASE_DSN: ${{ secrets.CRAWLER_DATABASE_DSN }}
+          CRAWLER_STORAGE_BACKEND: "gcs"
         run: |
           # Assign the value from IMAGE_OUT to the APP_IMAGE var used by the template
           export APP_IMAGE="${IMAGE_OUT}"
 
           # These other variables are already set by the step's 'env' block,
           # but exporting them ensures envsubst can access them.
-          export GCP_PROJECT GCP_REGION DB_HOST DB_PORT CRAWLER_DATABASE_DSN
+          export GCP_PROJECT GCP_REGION DB_HOST DB_PORT CRAWLER_DATABASE_DSN CRAWLER_STORAGE_BACKEND
 
           # Debug line: This will now print the image with its unique @sha256:... digest
           echo "--- Deploying Image: $APP_IMAGE"

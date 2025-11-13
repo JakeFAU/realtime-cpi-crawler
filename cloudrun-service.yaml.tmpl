@@ -26,6 +26,8 @@ spec:
               value: "${DB_PORT}"
             - name: CRAWLER_DATABASE_DSN
               value: ${CRAWLER_DATABASE_DSN}
+            - name: CRAWLER_STORAGE_BACKEND
+              value: ${CRAWLER_STORAGE_BACKEND}
           resources:
             limits: { cpu: "1", memory: 1Gi }
 
