@@ -36,6 +36,7 @@ WORKDIR /app
 
 # Binary
 COPY --from=builder /out/realtime-cpi-crawler /app/realtime-cpi-crawler
+COPY config.yaml /app/config.yaml
 RUN chown -R appuser:appuser /app
 
 # App & Chrome defaults
@@ -52,4 +53,4 @@ ENV CHROME_ARGS="--headless=new --no-sandbox --disable-gpu --disable-dev-shm-usa
 
 EXPOSE 8080
 USER appuser:appuser
-ENTRYPOINT ["/app/realtime-cpi-crawler"]
+ENTRYPOINT ["/app/realtime-cpi-crawler", "-config", "/app/config.yaml"]
