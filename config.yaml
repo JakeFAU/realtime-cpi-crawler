@@ -32,7 +32,7 @@ storage:
 
 database:
   dsn: "" # set via CRAWLER_DATABASE_DSN for trial runs
-  retrieval_table: crawler
+  retrieval_table: crawl
   progress_table: job_runs
   stats_table: job_stats
   max_conns: 4
