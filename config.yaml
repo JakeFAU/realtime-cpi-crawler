@@ -58,11 +58,11 @@ progress:
 standard_jobs:
   trial_run:
     urls:
-      - "https://www.amazon.com/"
+      - "https://books.toscrape.com/"
     max_depth: 1
-    max_pages: 25
+    max_pages: 60
     budget_seconds: 120
-    headless_allowed: true
+    headless_allowed: false
     respect_robots: true
     tags:
       environment: "trial"
