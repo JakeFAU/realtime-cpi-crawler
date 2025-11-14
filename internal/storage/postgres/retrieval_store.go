@@ -110,7 +110,7 @@ func (s *RetrievalStore) StoreRetrieval(ctx context.Context, record crawler.Retr
 	query := fmt.Sprintf(`
 INSERT INTO %s (
 	id,
-	job_uuid,
+	job_id,
 	job_started_at,
 	partition_ts,
 	retrieval_timestamp,
