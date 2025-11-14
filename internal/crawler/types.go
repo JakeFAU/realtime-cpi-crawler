@@ -110,6 +110,8 @@ type FetchResponse struct {
 	Screenshot   []byte
 	JobID        string
 	JobStartedAt time.Time
+	RobotsStatus RobotsStatus
+	RobotsReason string
 }
 
 // JobResult is returned by the API result endpoint.
@@ -117,3 +119,13 @@ type JobResult struct {
 	Job   Job
 	Pages []PageRecord
 }
+
+// RobotsStatus captures the outcome of evaluating robots.txt.
+type RobotsStatus string
+
+const (
+	// RobotsStatusUnknown is the zero/default value.
+	RobotsStatusUnknown RobotsStatus = ""
+	// RobotsStatusIndeterminate indicates the fetcher could not definitively read robots.txt.
+	RobotsStatusIndeterminate RobotsStatus = "indeterminate"
+)

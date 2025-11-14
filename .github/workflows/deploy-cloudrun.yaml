@@ -46,6 +46,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
+      security-events: write
     outputs:
       # --- THIS IS THE FIX ---
       # We now output the full image name using the unique digest (SHA)
@@ -106,6 +107,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
+      security-events: write
     environment:
       name: production
       url: ${{ steps.deploy.outputs.url }}

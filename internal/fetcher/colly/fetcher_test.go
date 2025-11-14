@@ -26,7 +26,7 @@ func TestFetcherBuildCollector(t *testing.T) {
 		RespectRobots:         false,
 	}
 
-	collector := f.buildCollector(req, start, &crawler.FetchResponse{}, new(error))
+	collector, _ := f.buildCollector(req, start, &crawler.FetchResponse{}, new(error))
 	if collector.UserAgent != "coverage-agent" {
 		t.Fatalf("expected user agent override, got %q", collector.UserAgent)
 	}

@@ -37,13 +37,15 @@ func TestInit(t *testing.T) {
 	crawlerBytesTotal = nil
 	httpRequestsTotal = nil
 	httpRequestDurationSeconds = nil
+	crawlerProbeTLSHandshakeTimeoutTotal = nil
 
 	// Call Init multiple times to test idempotency.
 	Init()
 	Init()
 
 	if crawlerPagesTotal == nil || crawlerBytesTotal == nil ||
-		httpRequestsTotal == nil || httpRequestDurationSeconds == nil {
+		httpRequestsTotal == nil || httpRequestDurationSeconds == nil ||
+		crawlerProbeTLSHandshakeTimeoutTotal == nil {
 		t.Fatal("Init() did not initialize metrics collectors")
 	}
 
