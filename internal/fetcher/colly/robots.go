@@ -66,11 +66,7 @@ func (s *robotsProbeState) apply(resp *crawler.FetchResponse) {
 
 func (s *robotsProbeState) roundTripWithRetry(req *http.Request, base http.RoundTripper) (*http.Response, error) {
 	if req == nil {
-		resp, err := base.RoundTrip(req)
-		if err != nil {
-			return nil, fmt.Errorf("robots roundtrip nil request: %w", err)
-		}
-		return resp, nil
+		return nil, errors.New("nil request passed to roundTripWithRetry")
 	}
 	var lastErr error
 	for attempt := 0; attempt <= len(robotsRetryBackoff); attempt++ {
