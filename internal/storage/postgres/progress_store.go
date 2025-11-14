@@ -37,7 +37,7 @@ func (s *ProgressStore) UpsertJobStart(ctx context.Context, jobID uuid.UUID, sta
 	query := `
 		INSERT INTO job_runs (id, job_id, started_at, status)
 		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (id) DO UPDATE
+		ON CONFLICT (id, started_at) DO UPDATE
 		SET status = EXCLUDED.status
 		WHERE job_runs.status <> EXCLUDED.status;
 	`
