@@ -87,10 +87,6 @@ func (s *robotsProbeState) roundTripWithRetry(req *http.Request, base http.Round
 			return nil, fmt.Errorf("robots roundtrip backoff sleep: %w", err)
 		}
 	}
-	if lastErr != nil {
-		return nil, fmt.Errorf("robots roundtrip exhausted retries: %w", lastErr)
-	}
-	return nil, fmt.Errorf("robots roundtrip exhausted retries: unknown error")
 }
 
 func (s *robotsProbeState) markIndeterminate(reason string) {
