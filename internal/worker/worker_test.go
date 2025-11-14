@@ -91,6 +91,8 @@ func TestWorker_ProcessJob_SuccessFlow(t *testing.T) {
 	require.Equal(t, "page-success", publisher.messages[0]["page_id"])
 	require.Equal(t, crawler.JobCounters{PagesSucceeded: 1}, jobStore.lastCounters())
 	require.Len(t, retrievalStore.records(), 1)
+	rec := retrievalStore.records()[0]
+	require.Equal(t, clock.now, rec.JobStartedAt)
 	require.Equal(t, 1, emitter.count(progress.StageJobStart))
 	require.Equal(t, 1, emitter.count(progress.StageFetchDone))
 	require.Equal(t, 1, emitter.count(progress.StageJobDone))

@@ -107,9 +107,12 @@ func (w *Worker) Run(ctx context.Context) {
 
 func (w *Worker) processJob(ctx context.Context, item crawler.QueueItem) {
 	start := w.now()
+	item.JobStartedAt = start
 	jobUUID, hasUUID := w.parseJobUUID(item.JobID)
 	if hasUUID {
-		w.emitEvent(jobUUID, progress.StageJobStart, nil)
+		w.emitEvent(jobUUID, progress.StageJobStart, func(evt *progress.Event) {
+			evt.TS = start
+		})
 	}
 	if w.probeFetcher == nil {
 		w.logger.Error("no probe fetcher configured", zap.String("job_id", item.JobID))
@@ -207,7 +210,7 @@ func (w *Worker) handleURL(
 		w.logger.Info("headless promotion applied", zap.String("job_id", item.JobID), zap.String("url", targetURL))
 	}
 
-	if err := w.persistAndPublish(ctx, item.JobID, targetURL, finalResp); err != nil {
+	if err := w.persistAndPublish(ctx, item.JobID, item.JobStartedAt, targetURL, finalResp); err != nil {
 		counters.PagesFailed++
 		w.logger.Error("persist page failed", zap.String("job_id", item.JobID), zap.String("url", targetURL), zap.Error(err))
 		w.recordPage(targetURL, false, len(finalResp.Body))
@@ -268,6 +271,7 @@ func (w *Worker) maybePromote(
 
 	headlessResp, err := w.headlessFetcher.Fetch(headlessCtx, crawler.FetchRequest{
 		JobID:                 item.JobID,
+		JobStartedAt:          item.JobStartedAt,
 		URL:                   url,
 		Depth:                 0,
 		UseHeadless:           true,
@@ -282,7 +286,13 @@ func (w *Worker) maybePromote(
 	return headlessResp, true
 }
 
-func (w *Worker) persistAndPublish(ctx context.Context, jobID, url string, resp crawler.FetchResponse) error {
+func (w *Worker) persistAndPublish(
+	ctx context.Context,
+	jobID string,
+	jobStartedAt time.Time,
+	url string,
+	resp crawler.FetchResponse,
+) error {
 	hash, err := w.hasher.Hash(resp.Body)
 	if err != nil {
 		return fmt.Errorf("hash body: %w", err)
@@ -333,6 +343,7 @@ func (w *Worker) persistAndPublish(ctx context.Context, jobID, url string, resp 
 	page := crawler.PageRecord{
 		ID:           pageID,
 		JobID:        jobID,
+		JobStartedAt: jobStartedAt,
 		URL:          resp.URL,
 		StatusCode:   resp.StatusCode,
 		UsedHeadless: resp.UsedHeadless,
