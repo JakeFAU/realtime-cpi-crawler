@@ -111,6 +111,7 @@ func (s *RetrievalStore) StoreRetrieval(ctx context.Context, record crawler.Retr
 INSERT INTO %s (
 	id,
 	job_uuid,
+	job_started_at,
 	partition_ts,
 	retrieval_timestamp,
 	retrieval_url,
@@ -122,12 +123,13 @@ INSERT INTO %s (
 	parent_id,
 	parent_ts
 ) VALUES (
-	$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12
+	$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13
 )`, s.table)
 
 	args := []any{
 		record.ID,
 		record.JobID,
+		record.JobStartedAt,
 		record.PartitionTS,
 		record.RetrievedAt,
 		record.URL,
