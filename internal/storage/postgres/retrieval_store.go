@@ -170,7 +170,7 @@ func (s *RetrievalStore) ensureJobRun(ctx context.Context, jobID string, started
 	query := fmt.Sprintf(`
 INSERT INTO %s (id, job_id, started_at, status)
 VALUES ($1, $2, $3, $4)
-ON CONFLICT (id) DO NOTHING
+ON CONFLICT (id, started_at) DO NOTHING
 `, s.progressTable)
 	if _, err := s.pool.Exec(ctx, query, jobID, jobID, startedAt, store.RunRunning); err != nil {
 		return fmt.Errorf("insert job run: %w", err)
