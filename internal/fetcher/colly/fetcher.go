@@ -96,6 +96,8 @@ func (f *Fetcher) configureCollectorHooks(
 			Body:         append([]byte(nil), r.Body...),
 			Duration:     time.Since(start),
 			UsedHeadless: false,
+			JobID:        result.JobID,
+			JobStartedAt: result.JobStartedAt,
 		}
 	})
 
