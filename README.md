@@ -41,6 +41,9 @@ go run ./cmd/webcrawler --config config.yaml
 | GET    | `/v1/jobs/{job_id}/status`  | Retrieve current job status, counters, and timestamps.               |
 | GET    | `/v1/jobs/{job_id}/result`  | Fetch page-level metadata (URLs, hashes, headless flag, blob URIs).  |
 | POST   | `/v1/jobs/{job_id}/cancel`  | Attempt to cancel an in-flight job.                                  |
+| GET    | `/api/jobs`                 | List job runs with optional status filtering and pagination.         |
+| GET    | `/api/jobs/{job_id}`        | Get details of a specific job run.                                   |
+| GET    | `/api/jobs/{job_id}/sites`  | List aggregated site statistics for a job (visits, bytes, status).   |
 | GET    | `/healthz`, `/readyz`       | Liveness/readiness checks.                                           |
 | GET    | `/metrics`                  | Prometheus metrics (HTTP, queue depth, job/page counters).           |
 
@@ -70,11 +73,12 @@ Configuration is merged from `config.yaml` and `CRAWLER_*` environment variables
 - `crawler.concurrency`, `crawler.queue_depth`, `crawler.user_agent`, `crawler.max_depth_default`, `crawler.max_pages_default`.
 - `http.timeout_seconds` – per-page probe budget (also used as default job budget).
 - `headless.enabled`, `headless.max_parallel`, `headless.nav_timeout_seconds`, `headless.promotion_threshold`.
-- `storage.backend` (`memory` or `gcs`), `storage.bucket` (required for `gcs`), `storage.prefix`, `storage.content_type`.
-- `database.dsn`, `database.table`, `database.max_conns`, `database.min_conns`, `database.max_conn_lifetime`.
-- `pubsub.topic_name`.
-- `pubsub.project_id`.
+- `storage.backend` (`memory`, `gcs`, or `local`), `storage.bucket` (required for `gcs`), `storage.prefix`, `storage.content_type`, `storage.local.base_dir` (required for `local`).
+- `database.dsn`, `database.retrieval_table`, `database.progress_table`, `database.stats_table`, `database.max_conns`, `database.min_conns`, `database.max_conn_lifetime`.
+- `pubsub.topic_name`, `pubsub.project_id`.
 - `logging.development` – toggles zap dev vs prod logger.
+- `metrics.enabled`, `metrics.path` – control Prometheus metrics exposition.
+- `progress.enabled`, `progress.buffer_size`, `progress.batch.max_events`, `progress.batch.max_wait_ms`, `progress.sink_timeout_ms`, `progress.log_enabled` – control progress tracking subsystem.
 - `standard_jobs.<name>` – canned job parameter templates.
 
 See [`INSTRUCTIONS.md`](INSTRUCTIONS.md) for detailed operational guidance.
@@ -105,10 +109,10 @@ For more depth—including deployment, API payload details, observability, and s
 
 ## Storage Layout
 
-When `storage.backend` is `gcs`, raw crawl artifacts are persisted as:
+When `storage.backend` is `gcs` or `local`, raw crawl artifacts are persisted as:
 
 ```
-gs://<bucket>/<prefix>/yyyymm/dd/hh/host=<host>/id=<uuid7>/
+gs://<bucket>/<prefix>/yyyymm/dd/hh/host=<host>/id=<uuid7>/   # or local path for 'local' backend
   raw.html
   headers.json
   meta.json        # {url, status, size, sha256, content_type, parent_id, job_uuid}
@@ -117,23 +121,45 @@ gs://<bucket>/<prefix>/yyyymm/dd/hh/host=<host>/id=<uuid7>/
 
 Each fetched page receives its own UUIDv7 (also recorded in the API response) so the files can be referenced from downstream databases or workers.
 
-Alongside the blobs, each retrieval is normalized into Postgres (default table `retrievals`). Expected columns:
+### Database Schema
 
-- `id UUID PRIMARY KEY DEFAULT gen_uuid_v7()` – page UUID (matches blob path).
-- `job_uuid UUID NOT NULL` – ID of the crawl job.
+When `database.dsn` is provided, the crawler persists data to three Postgres tables:
+
+**Retrievals Table** (default: `crawl`, configured via `database.retrieval_table`):
+- `id UUID PRIMARY KEY` – page UUID (matches blob path).
+- `job_id UUID NOT NULL` – ID of the crawl job.
+- `job_started_at TIMESTAMPTZ NOT NULL` – when the job began.
 - `partition_ts TIMESTAMPTZ NOT NULL` – hour bucket (`retrieval_timestamp` truncated to the hour) to aid partitioning.
 - `retrieval_timestamp TIMESTAMPTZ NOT NULL DEFAULT now()` – precise ingest time.
 - `retrieval_url TEXT NOT NULL` – final URL fetched.
 - `retrieval_hashcode TEXT` – SHA256/content hash.
-- `retrieval_blob_location TEXT` – `gs://` URI of `raw.html`.
+- `retrieval_blob_location TEXT` – blob URI of `raw.html`.
 - `retrieval_headers JSONB` – serialized HTTP headers.
 - `retrieval_status_code INTEGER` – HTTP status.
 - `retrieval_content_type TEXT` – MIME type inferred from the response/body.
 - `parent_id UUID NULL` / `parent_ts TIMESTAMPTZ NULL` – optional ancestry for promoted/sub-pages.
-- `retrieval_processed BOOLEAN NOT NULL DEFAULT false` / `processing_error TEXT NULL` – toggled by downstream AI stages.
 - `created_at TIMESTAMPTZ NOT NULL DEFAULT now()` / `updated_at TIMESTAMPTZ NOT NULL DEFAULT now()`.
 
-Set `database.table` if your schema name differs. The worker only performs inserts; downstream consumers own the `retrieval_processed` or `processing_error` columns.
+**Job Runs Table** (default: `job_runs`, configured via `database.progress_table`):
+- `id UUID PRIMARY KEY` – run identifier (same as job_id).
+- `job_id UUID NOT NULL` – job identifier.
+- `started_at TIMESTAMPTZ NOT NULL` – when the job started.
+- `finished_at TIMESTAMPTZ` – when the job completed.
+- `status TEXT NOT NULL` – job status (running, success, error).
+- `error_message TEXT` – error details if status is error.
+
+**Site Stats Table** (default: `job_stats`, configured via `database.stats_table`):
+- `job_id UUID NOT NULL` – associated job.
+- `site TEXT NOT NULL` – domain/site being crawled.
+- `last_update TIMESTAMPTZ NOT NULL` – last time stats were updated.
+- `visits INT64 NOT NULL DEFAULT 0` – total page visits.
+- `bytes_total INT64 NOT NULL DEFAULT 0` – total bytes fetched.
+- `fetch_2xx INT64 NOT NULL DEFAULT 0` – count of 2xx responses.
+- `fetch_3xx INT64 NOT NULL DEFAULT 0` – count of 3xx responses.
+- `fetch_4xx INT64 NOT NULL DEFAULT 0` – count of 4xx responses.
+- `fetch_5xx INT64 NOT NULL DEFAULT 0` – count of 5xx responses.
+
+The worker only performs inserts; downstream consumers own any additional processing flags.
 
 When both `pubsub.project_id` and `pubsub.topic_name` are provided, each successful fetch is published to Google Cloud Pub/Sub as a compact JSON document:
 
