@@ -91,7 +91,9 @@ storage:
 
 database:
   dsn: ""
-  table: "retrievals"
+  retrieval_table: "crawl"
+  progress_table: "job_runs"
+  stats_table: "job_stats"
   max_conns: 4
   min_conns: 0
   max_conn_lifetime: 0s
@@ -107,8 +109,10 @@ pubsub:
 - `storage.prefix` scopes blob paths (`<prefix>/crawl/...`); leave blank to write at the root.
 - `storage.content_type` is stored alongside each blob for downstream consumers.
 - `database.*` controls the Postgres pool used to persist retrieval rows (set `dsn` to enable).
+- `database.retrieval_table` names the table for storing individual page retrievals (default: `crawl`).
+- `database.progress_table` names the table for tracking job run lifecycle (default: `job_runs`).
+- `database.stats_table` names the table for aggregated site statistics (default: `job_stats`).
 - `pubsub.project_id` + `pubsub.topic_name` enable Cloud Pub/Sub publishing; leave blank to disable.
-- `pubsub.topic_name` enables publish-on-completion; leave empty to disable publishing.
 
 ### 2.7 Logging
 
@@ -117,7 +121,33 @@ logging:
   development: true       # colorized dev logs; false → JSON prod logs
 ```
 
-### 2.8 Standard Jobs Templates
+### 2.8 Metrics & Progress
+
+```yaml
+metrics:
+  enabled: true
+  path: "/metrics"
+
+progress:
+  enabled: true
+  buffer_size: 4096
+  sink_timeout_ms: 2000
+  log_enabled: false
+  batch:
+    max_events: 1000
+    max_wait_ms: 500
+```
+
+- `metrics.enabled` toggles Prometheus metrics endpoint exposition.
+- `metrics.path` sets the HTTP path for the metrics endpoint (default: `/metrics`).
+- `progress.enabled` toggles the progress tracking subsystem.
+- `progress.buffer_size` configures hub channel capacity for buffering progress events.
+- `progress.batch.max_events` flushes after this many events accumulate.
+- `progress.batch.max_wait_ms` flushes after this many milliseconds even if under max_events.
+- `progress.sink_timeout_ms` bounds per-sink consume calls.
+- `progress.log_enabled` toggles the LogSink for debugging progress events.
+
+### 2.9 Standard Jobs Templates
 
 ```yaml
 standard_jobs:
@@ -130,28 +160,54 @@ standard_jobs:
 
 ---
 
-### 2.9 Retrieval Persistence
+### 2.10 Retrieval Persistence
 
-The worker mirrors each successful fetch into Postgres (default table `retrievals`). Create the table (or view) with at least:
+The worker mirrors each successful fetch into Postgres using three tables. When `database.dsn` is provided, ensure the following tables exist:
+
+#### Retrievals Table (default: `crawl`, configured via `database.retrieval_table`)
 
 | Column | Type | Notes |
 |--------|------|-------|
-| `id uuid` | PK, default `gen_uuid_v7()` | Matches the blob folder `id=<uuid>` |
-| `job_uuid uuid` | NOT NULL | Crawl/job identifier |
+| `id uuid` | PK | Matches the blob folder `id=<uuid>` |
+| `job_id uuid` | NOT NULL | Crawl/job identifier |
+| `job_started_at timestamptz` | NOT NULL | When the job began |
 | `partition_ts timestamptz` | NOT NULL | `retrieval_timestamp` truncated to the hour (helps time-based partitions) |
 | `retrieval_timestamp timestamptz` | NOT NULL DEFAULT now() | Exact ingest time |
 | `retrieval_url text` | NOT NULL | Final URL |
 | `retrieval_hashcode text` | NULL | SHA256/hasher output |
-| `retrieval_blob_location text` | NULL | `gs://…/raw.html` |
+| `retrieval_blob_location text` | NULL | Blob URI of `raw.html` |
 | `retrieval_headers jsonb` | NULL | HTTP headers captured during fetch |
 | `retrieval_status_code integer` | NULL | HTTP response status |
 | `retrieval_content_type text` | NULL | MIME type used when writing `raw.html` |
 | `parent_id uuid` / `parent_ts timestamptz` | NULL | Optional ancestry for promoted sub-pages |
-| `retrieval_processed boolean` | NOT NULL DEFAULT false | Flipped by the AI stack once complete |
-| `processing_error text` | NULL | Set by AI stack on failure |
 | `created_at timestamptz` / `updated_at timestamptz` | NOT NULL DEFAULT now() | Basic audit columns |
 
-Tune `database.table` if you tuck the data under a different schema or table name. The crawler only inserts rows; downstream services own the processed/error flags.
+#### Job Runs Table (default: `job_runs`, configured via `database.progress_table`)
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id uuid` | PK | Run identifier (same as job_id) |
+| `job_id uuid` | NOT NULL | Job identifier |
+| `started_at timestamptz` | NOT NULL | When the job started |
+| `finished_at timestamptz` | NULL | When the job completed |
+| `status text` | NOT NULL | Job status (running, success, error) |
+| `error_message text` | NULL | Error details if status is error |
+
+#### Site Stats Table (default: `job_stats`, configured via `database.stats_table`)
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `job_id uuid` | NOT NULL | Associated job |
+| `site text` | NOT NULL | Domain/site being crawled |
+| `last_update timestamptz` | NOT NULL | Last time stats were updated |
+| `visits int64` | NOT NULL DEFAULT 0 | Total page visits |
+| `bytes_total int64` | NOT NULL DEFAULT 0 | Total bytes fetched |
+| `fetch_2xx int64` | NOT NULL DEFAULT 0 | Count of 2xx responses |
+| `fetch_3xx int64` | NOT NULL DEFAULT 0 | Count of 3xx responses |
+| `fetch_4xx int64` | NOT NULL DEFAULT 0 | Count of 4xx responses |
+| `fetch_5xx int64` | NOT NULL DEFAULT 0 | Count of 5xx responses |
+
+The crawler only inserts rows; downstream services can extend these tables with additional columns for processing flags or AI pipeline state.
 
 When Cloud Pub/Sub is enabled, each retrieval also results in a JSON payload (containing `job_id`, `page_id`, `url`, `blob_uri`, `hash`, `status`, `headless`, `timestamp`) being published to `pubsub.topic_name` for the AI processing tier.
 
@@ -209,6 +265,26 @@ Response: `{"job_id": "<uuid>"}` (202 Accepted or 429 if queue full).
 - `/healthz` – simple 200 response.
 - `/readyz` – always ready in memory-only mode; extend to check dependencies.
 - `/metrics` – Prometheus registry export (HTTP latency, queue depth, job/page counters).
+
+### 3.7 Progress Endpoints
+
+`GET /api/jobs?status=&limit=&offset=`
+
+Returns a list of job runs with optional filtering by status (running, success, error). Supports pagination via limit (default 50, max 500) and offset parameters.
+
+Response: `{"jobs": [...]}`
+
+`GET /api/jobs/{job_id}`
+
+Returns details of a specific job run including start/finish times, status, and error messages.
+
+Response: `{"job": {...}}`
+
+`GET /api/jobs/{job_id}/sites?limit=&offset=`
+
+Returns aggregated statistics per site for a given job, including visit counts, bytes transferred, and HTTP status code distributions.
+
+Response: `{"sites": [...]}`
 
 ---
 
