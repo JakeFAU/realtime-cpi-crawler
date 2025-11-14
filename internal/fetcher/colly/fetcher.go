@@ -69,6 +69,9 @@ func (f *Fetcher) buildCollector(
 		timeout = 15 * time.Second
 	}
 	collector.SetRequestTimeout(timeout)
+	// just to make sure it's set
+	result.JobID = request.JobID
+	result.JobStartedAt = request.JobStartedAt
 
 	f.configureCollectorHooks(collector, request, start, result, fetchErr)
 	return collector

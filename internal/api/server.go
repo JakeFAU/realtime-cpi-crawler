@@ -240,10 +240,11 @@ func (s *Server) enqueueJob(ctx context.Context, params crawler.JobParameters) (
 	queueCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	item := crawler.QueueItem{
-		JobID:     jobID,
-		Params:    params,
-		Attempt:   1,
-		Submitted: now.Unix(),
+		JobID:        jobID,
+		JobStartedAt: now,
+		Params:       params,
+		Attempt:      1,
+		Submitted:    now.Unix(),
 	}
 	if err := s.dispatcher.Enqueue(queueCtx, item); err != nil {
 		return "", fmt.Errorf("enqueue job: %w", err)

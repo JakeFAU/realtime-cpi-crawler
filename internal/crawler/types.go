@@ -57,6 +57,7 @@ type JobCounters struct {
 type PageRecord struct {
 	ID           string         `json:"id,omitempty"`
 	JobID        string         `json:"job_id"`
+	JobStartedAt time.Time      `json:"job_started_at"`
 	URL          string         `json:"url"`
 	StatusCode   int            `json:"status_code"`
 	UsedHeadless bool           `json:"used_headless"`
@@ -72,6 +73,7 @@ type PageRecord struct {
 type RetrievalRecord struct {
 	ID              string
 	JobID           string
+	JobStartedAt    time.Time
 	URL             string
 	Hash            string
 	BlobURI         string
@@ -88,6 +90,7 @@ type RetrievalRecord struct {
 // FetchRequest captures everything needed to fetch a URL.
 type FetchRequest struct {
 	JobID                 string
+	JobStartedAt          time.Time
 	URL                   string
 	Depth                 int
 	UseHeadless           bool
@@ -105,6 +108,8 @@ type FetchResponse struct {
 	Duration     time.Duration
 	UsedHeadless bool
 	Screenshot   []byte
+	JobID        string
+	JobStartedAt time.Time
 }
 
 // JobResult is returned by the API result endpoint.

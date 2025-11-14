@@ -70,8 +70,9 @@ type IDGenerator interface {
 
 // QueueItem wraps a job ready to run.
 type QueueItem struct {
-	JobID     string
-	Params    JobParameters
-	Attempt   int
-	Submitted int64
+	JobID        string
+	JobStartedAt time.Time
+	Params       JobParameters
+	Attempt      int
+	Submitted    int64
 }

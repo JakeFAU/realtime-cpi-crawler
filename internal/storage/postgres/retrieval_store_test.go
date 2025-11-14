@@ -41,6 +41,7 @@ func TestStoreRetrievalInsertsRow(t *testing.T) {
 		WithArgs(
 			rec.ID,
 			rec.JobID,
+			rec.JobStartedAt,
 			rec.PartitionTS,
 			rec.RetrievedAt,
 			rec.URL,

@@ -229,6 +229,7 @@ func (w *Worker) fetchProbe(ctx context.Context, item crawler.QueueItem, url str
 
 	resp, err := w.probeFetcher.Fetch(pageCtx, crawler.FetchRequest{
 		JobID:                 item.JobID,
+		JobStartedAt:          item.JobStartedAt,
 		URL:                   url,
 		Depth:                 0,
 		RespectRobots:         item.Params.RespectRobots,
@@ -466,17 +467,18 @@ func (w *Worker) storeRetrieval(ctx context.Context, page crawler.PageRecord, co
 		return nil
 	}
 	record := crawler.RetrievalRecord{
-		ID:          page.ID,
-		JobID:       page.JobID,
-		URL:         page.URL,
-		Hash:        page.ContentHash,
-		BlobURI:     page.BlobURI,
-		Headers:     page.Headers,
-		StatusCode:  page.StatusCode,
-		ContentType: contentType,
-		SizeBytes:   size,
-		RetrievedAt: page.FetchedAt,
-		PartitionTS: page.FetchedAt.Truncate(time.Hour),
+		ID:           page.ID,
+		JobID:        page.JobID,
+		JobStartedAt: page.JobStartedAt,
+		URL:          page.URL,
+		Hash:         page.ContentHash,
+		BlobURI:      page.BlobURI,
+		Headers:      page.Headers,
+		StatusCode:   page.StatusCode,
+		ContentType:  contentType,
+		SizeBytes:    size,
+		RetrievedAt:  page.FetchedAt,
+		PartitionTS:  page.FetchedAt.Truncate(time.Hour),
 	}
 	if err := w.retrievalStore.StoreRetrieval(ctx, record); err != nil {
 		return fmt.Errorf("store retrieval: %w", err)
