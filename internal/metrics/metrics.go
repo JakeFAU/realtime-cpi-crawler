@@ -15,10 +15,11 @@ import (
 )
 
 var (
-	crawlerPagesTotal          *prometheus.CounterVec
-	crawlerBytesTotal          *prometheus.CounterVec
-	httpRequestsTotal          *prometheus.CounterVec
-	httpRequestDurationSeconds *prometheus.HistogramVec
+	crawlerPagesTotal                    *prometheus.CounterVec
+	crawlerBytesTotal                    *prometheus.CounterVec
+	httpRequestsTotal                    *prometheus.CounterVec
+	httpRequestDurationSeconds           *prometheus.HistogramVec
+	crawlerProbeTLSHandshakeTimeoutTotal prometheus.Counter
 
 	once sync.Once
 )
@@ -59,6 +60,13 @@ func Init() {
 			},
 			[]string{"method", "route"},
 		)
+
+		crawlerProbeTLSHandshakeTimeoutTotal = promauto.NewCounter(
+			prometheus.CounterOpts{
+				Name: "crawler_probe_tls_handshake_timeout_total",
+				Help: "Total TLS handshake timeouts encountered while probing robots.txt.",
+			},
+		)
 	})
 }
 
@@ -93,4 +101,9 @@ func ObserveCrawl(site string, status string, bytesFetched int) {
 func ObserveHTTPRequest(method, route string, code int, duration time.Duration) {
 	httpRequestsTotal.WithLabelValues(method, strconv.Itoa(code)).Inc()
 	httpRequestDurationSeconds.WithLabelValues(method, route).Observe(duration.Seconds())
+}
+
+// ObserveProbeTLSHandshakeTimeout increments the probe-specific handshake timeout counter.
+func ObserveProbeTLSHandshakeTimeout() {
+	crawlerProbeTLSHandshakeTimeoutTotal.Inc()
 }

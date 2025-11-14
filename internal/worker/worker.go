@@ -239,6 +239,14 @@ func (w *Worker) fetchProbe(ctx context.Context, item crawler.QueueItem, url str
 		w.recordPage(url, false, 0)
 		return crawler.FetchResponse{}, fmt.Errorf("probe fetch: %w", err)
 	}
+	if resp.RobotsStatus == crawler.RobotsStatusIndeterminate {
+		w.logger.Warn("robots.txt probe indeterminate, defaulting to allow all",
+			zap.String("job_id", item.JobID),
+			zap.String("url", url),
+			zap.String("phase", "probe"),
+			zap.String("reason", resp.RobotsReason),
+		)
+	}
 	return resp, nil
 }
 
