@@ -30,6 +30,9 @@ type robotsAwareTransport struct {
 }
 
 func (t *robotsAwareTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req == nil {
+		return nil, errors.New("robots transport received nil request")
+	}
 	if t.state == nil || !isRobotsTxtRequest(req) {
 		resp, err := t.base.RoundTrip(req)
 		if err != nil {
@@ -68,18 +71,17 @@ func (s *robotsProbeState) roundTripWithRetry(req *http.Request, base http.Round
 	if req == nil {
 		return nil, errors.New("nil request passed to roundTripWithRetry")
 	}
-	var lastErr error
-	for attempt := 0; attempt <= len(robotsRetryBackoff); attempt++ {
+	maxAttempts := len(robotsRetryBackoff) + 1
+	for attempt := 0; attempt < maxAttempts; attempt++ {
 		cloneReq := cloneRequest(req)
 		resp, err := base.RoundTrip(cloneReq)
 		if err == nil {
 			return resp, nil
 		}
-		lastErr = err
 		if !isTransientTLSError(err) {
 			return nil, fmt.Errorf("robots roundtrip non-transient: %w", err)
 		}
-		if attempt == len(robotsRetryBackoff) {
+		if attempt == maxAttempts-1 {
 			s.markIndeterminate(robotsFallbackReasonTLSHandshake)
 			return syntheticRobotsAllowAllResponse(req), nil
 		}
@@ -87,6 +89,7 @@ func (s *robotsProbeState) roundTripWithRetry(req *http.Request, base http.Round
 			return nil, fmt.Errorf("robots roundtrip backoff sleep: %w", err)
 		}
 	}
+	return nil, fmt.Errorf("robots roundtrip exhausted retries")
 }
 
 func (s *robotsProbeState) markIndeterminate(reason string) {
