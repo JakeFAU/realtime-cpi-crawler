@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/crawler"
+	"github.com/JakeFAU/realtime-cpi-crawler/internal/store"
 )
 
 var validTableName = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
@@ -21,6 +22,7 @@ var validTableName = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 type RetrievalStoreConfig struct {
 	DSN             string
 	Table           string
+	ProgressTable   string
 	MaxConns        int32
 	MinConns        int32
 	MaxConnLifetime time.Duration
@@ -33,8 +35,9 @@ type execCloser interface {
 
 // RetrievalStore writes retrieval rows into Postgres.
 type RetrievalStore struct {
-	pool  execCloser
-	table string
+	pool          execCloser
+	table         string
+	progressTable string
 }
 
 // NewRetrievalStore creates a Postgres-backed RetrievalStore using the provided config.
@@ -48,6 +51,10 @@ func NewRetrievalStore(ctx context.Context, cfg RetrievalStoreConfig) (*Retrieva
 	}
 	if !validTableName.MatchString(table) {
 		return nil, fmt.Errorf("invalid table name %q", table)
+	}
+	progressTable := cfg.ProgressTable
+	if progressTable != "" && !validTableName.MatchString(progressTable) {
+		return nil, fmt.Errorf("invalid progress table name %q", progressTable)
 	}
 	poolCfg, err := pgxpool.ParseConfig(cfg.DSN)
 	if err != nil {
@@ -67,13 +74,14 @@ func NewRetrievalStore(ctx context.Context, cfg RetrievalStoreConfig) (*Retrieva
 		return nil, fmt.Errorf("connect postgres: %w", err)
 	}
 	return &RetrievalStore{
-		pool:  pool,
-		table: table,
+		pool:          pool,
+		table:         table,
+		progressTable: progressTable,
 	}, nil
 }
 
 // NewRetrievalStoreWithPool constructs a store from an existing pool (primarily for testing).
-func NewRetrievalStoreWithPool(pool execCloser, table string) (*RetrievalStore, error) {
+func NewRetrievalStoreWithPool(pool execCloser, table string, progressTable string) (*RetrievalStore, error) {
 	if pool == nil {
 		return nil, fmt.Errorf("pool is required")
 	}
@@ -83,7 +91,10 @@ func NewRetrievalStoreWithPool(pool execCloser, table string) (*RetrievalStore, 
 	if !validTableName.MatchString(table) {
 		return nil, fmt.Errorf("invalid table name %q", table)
 	}
-	return &RetrievalStore{pool: pool, table: table}, nil
+	if progressTable != "" && !validTableName.MatchString(progressTable) {
+		return nil, fmt.Errorf("invalid progress table name %q", progressTable)
+	}
+	return &RetrievalStore{pool: pool, table: table, progressTable: progressTable}, nil
 }
 
 // Close releases the underlying pool resources.
@@ -102,6 +113,11 @@ func (s *RetrievalStore) StoreRetrieval(ctx context.Context, record crawler.Retr
 	}
 	if record.ID == "" {
 		return fmt.Errorf("record id is required")
+	}
+	if s.progressTable != "" {
+		if err := s.ensureJobRun(ctx, record.JobID, record.JobStartedAt); err != nil {
+			return fmt.Errorf("ensure job run: %w", err)
+		}
 	}
 	headersJSON, err := json.Marshal(normalizeHeaders(record.Headers))
 	if err != nil {
@@ -143,6 +159,21 @@ INSERT INTO %s (
 	}
 	if _, err := s.pool.Exec(ctx, query, args...); err != nil {
 		return fmt.Errorf("insert retrieval: %w", err)
+	}
+	return nil
+}
+
+func (s *RetrievalStore) ensureJobRun(ctx context.Context, jobID string, startedAt time.Time) error {
+	if jobID == "" || startedAt.IsZero() {
+		return fmt.Errorf("job id and start time are required")
+	}
+	query := fmt.Sprintf(`
+INSERT INTO %s (id, job_id, started_at, status)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (id) DO NOTHING
+`, s.progressTable)
+	if _, err := s.pool.Exec(ctx, query, jobID, jobID, startedAt, store.RunRunning); err != nil {
+		return fmt.Errorf("insert job run: %w", err)
 	}
 	return nil
 }

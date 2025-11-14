@@ -241,6 +241,7 @@ func setupDatabase(ctx context.Context, app *App) error {
 	app.retrievalStore, err = pgstore.NewRetrievalStore(ctx, pgstore.RetrievalStoreConfig{
 		DSN:             app.cfg.Database.DSN,
 		Table:           app.cfg.Database.RetrievalTable,
+		ProgressTable:   app.cfg.Database.ProgressTable,
 		MaxConns:        app.cfg.Database.MaxConns,
 		MinConns:        app.cfg.Database.MinConns,
 		MaxConnLifetime: app.cfg.Database.MaxConnLifetime,
