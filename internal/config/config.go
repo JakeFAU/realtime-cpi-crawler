@@ -138,7 +138,7 @@ func (c *DatabaseConfig) resolveDSN() error { //nolint:gocyclo // helper enumera
 	// Normalize c.Host: remove brackets if present (for IPv6)
 	host := c.Host
 	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
-		host = host[1:len(host)-1]
+		host = host[1 : len(host)-1]
 	}
 	hostPort := net.JoinHostPort(host, strconv.Itoa(port))
 	u := url.URL{
