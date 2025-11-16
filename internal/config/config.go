@@ -3,6 +3,9 @@ package config
 
 import (
 	"fmt"
+	"net"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -80,12 +83,79 @@ type StorageConfig struct {
 // DatabaseConfig controls Postgres connectivity for retrieval persistence.
 type DatabaseConfig struct {
 	DSN             string        `mapstructure:"dsn"`
+	Host            string        `mapstructure:"host"`
+	Port            int           `mapstructure:"port"`
+	User            string        `mapstructure:"user"`
+	Password        string        `mapstructure:"password"`
+	Name            string        `mapstructure:"name"`
+	SSLMode         string        `mapstructure:"sslmode"`
 	MaxConns        int32         `mapstructure:"max_conns"`
 	MinConns        int32         `mapstructure:"min_conns"`
 	MaxConnLifetime time.Duration `mapstructure:"max_conn_lifetime"`
 	RetrievalTable  string        `mapstructure:"retrieval_table"`
 	ProgressTable   string        `mapstructure:"progress_table"`
 	StatsTable      string        `mapstructure:"stats_table"`
+}
+
+func (c *DatabaseConfig) resolveDSN() error { //nolint:gocyclo // helper enumerates validation branches for clarity
+	if c == nil {
+		return nil
+	}
+	if strings.TrimSpace(c.DSN) != "" {
+		return nil
+	}
+	if strings.TrimSpace(c.Host) == "" &&
+		c.Port == 0 &&
+		strings.TrimSpace(c.User) == "" &&
+		strings.TrimSpace(c.Password) == "" &&
+		strings.TrimSpace(c.Name) == "" &&
+		strings.TrimSpace(c.SSLMode) == "" {
+		return nil
+	}
+	missing := make([]string, 0, 4)
+	if strings.TrimSpace(c.Host) == "" {
+		missing = append(missing, "database.host")
+	}
+	if strings.TrimSpace(c.User) == "" {
+		missing = append(missing, "database.user")
+	}
+	if strings.TrimSpace(c.Password) == "" {
+		missing = append(missing, "database.password")
+	}
+	if strings.TrimSpace(c.Name) == "" {
+		missing = append(missing, "database.name")
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf(
+			"database config incomplete: set %s when database.dsn is omitted",
+			strings.Join(missing, ", "),
+		)
+	}
+	port := c.Port
+	if port == 0 {
+		port = 5432
+	}
+	// Normalize c.Host: remove brackets if present (for IPv6)
+	host := c.Host
+	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		host = host[1 : len(host)-1]
+	}
+	hostPort := net.JoinHostPort(host, strconv.Itoa(port))
+	u := url.URL{
+		Scheme: "postgres",
+		User:   url.UserPassword(c.User, c.Password),
+		Host:   hostPort,
+		Path:   "/" + c.Name,
+	}
+	query := url.Values{}
+	if strings.TrimSpace(c.SSLMode) != "" {
+		query.Set("sslmode", c.SSLMode)
+	}
+	if len(query) > 0 {
+		u.RawQuery = query.Encode()
+	}
+	c.DSN = u.String()
+	return nil
 }
 
 // PubSubConfig holds metadata for publish-subscribe notifications.
@@ -150,6 +220,10 @@ func Load(path string) (Config, error) {
 		return Config{}, fmt.Errorf("unmarshal config: %w", err)
 	}
 
+	if err := cfg.Database.resolveDSN(); err != nil {
+		return Config{}, err
+	}
+
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
 	}
@@ -174,6 +248,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("storage.prefix", "crawl")
 	v.SetDefault("storage.content_type", "text/html; charset=utf-8")
 	v.SetDefault("storage.local.base_dir", "tmp/storage")
+	v.SetDefault("database.port", 5432)
 	v.SetDefault("database.table", "retrievals")
 	v.SetDefault("logging.development", true)
 	v.SetDefault("metrics.enabled", true)

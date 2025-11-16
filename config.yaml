@@ -31,7 +31,13 @@ storage:
     base_dir: "tmp/storage"
 
 database:
-  dsn: "" # set via CRAWLER_DATABASE_DSN for trial runs
+  host: ""
+  port: 5432
+  user: ""
+  password: ""
+  name: ""
+  sslmode: ""
+  dsn: "" # optional override; normally derived from host/user/password env vars
   retrieval_table: crawl
   progress_table: job_runs
   stats_table: job_stats

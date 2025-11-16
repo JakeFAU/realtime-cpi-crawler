@@ -254,3 +254,37 @@ func TestConfigValidateErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestDatabaseResolveDSNFromComponents(t *testing.T) {
+	t.Parallel()
+
+	cfg := DatabaseConfig{
+		Host:     "10.1.1.5",
+		Port:     6432,
+		User:     "crawler",
+		Password: "super-secret",
+		Name:     "realtime",
+		SSLMode:  "require",
+	}
+	if err := cfg.resolveDSN(); err != nil {
+		t.Fatalf("resolveDSN() error = %v", err)
+	}
+	want := "postgres://crawler:super-secret@10.1.1.5:6432/realtime?sslmode=require"
+	if cfg.DSN != want {
+		t.Fatalf("unexpected DSN built: got %q want %q", cfg.DSN, want)
+	}
+}
+
+func TestDatabaseResolveDSNPartialConfig(t *testing.T) {
+	t.Parallel()
+
+	cfg := DatabaseConfig{
+		Host: "10.1.1.5",
+		User: "crawler",
+		Name: "realtime",
+	}
+	err := cfg.resolveDSN()
+	if err == nil || !strings.Contains(err.Error(), "database.password") {
+		t.Fatalf("expected missing password error, got %v", err)
+	}
+}

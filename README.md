@@ -74,7 +74,7 @@ Configuration is merged from `config.yaml` and `CRAWLER_*` environment variables
 - `http.timeout_seconds` – per-page probe budget (also used as default job budget).
 - `headless.enabled`, `headless.max_parallel`, `headless.nav_timeout_seconds`, `headless.promotion_threshold`.
 - `storage.backend` (`memory`, `gcs`, or `local`), `storage.bucket` (required for `gcs`), `storage.prefix`, `storage.content_type`, `storage.local.base_dir` (required for `local`).
-- `database.dsn`, `database.retrieval_table`, `database.progress_table`, `database.stats_table`, `database.max_conns`, `database.min_conns`, `database.max_conn_lifetime`.
+- `database.host`, `database.port`, `database.user`, `database.password`, `database.name` (or the legacy `database.dsn`), `database.retrieval_table`, `database.progress_table`, `database.stats_table`, `database.max_conns`, `database.min_conns`, `database.max_conn_lifetime`.
 - `pubsub.topic_name`, `pubsub.project_id`.
 - `logging.development` – toggles zap dev vs prod logger.
 - `metrics.enabled`, `metrics.path` – control Prometheus metrics exposition.
@@ -123,7 +123,7 @@ Each fetched page receives its own UUIDv7 (also recorded in the API response) so
 
 ### Database Schema
 
-When `database.dsn` is provided, the crawler persists data to three Postgres tables:
+When database connectivity is configured (via `database.dsn` or the host/user/password fields), the crawler persists data to three Postgres tables:
 
 **Retrievals Table** (default: `crawl`, configured via `database.retrieval_table`):
 - `id UUID PRIMARY KEY` – page UUID (matches blob path).
