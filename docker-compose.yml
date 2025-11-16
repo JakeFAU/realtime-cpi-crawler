@@ -12,7 +12,11 @@ services:
       - PORT=8080
       - CHROME_PATH=/usr/bin/chromium
       - CHROME_ARGS=--headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage --remote-allow-origins=*
-      - CRAWLER_DATABASE_DSN=${CRAWLER_DATABASE_DSN:-}
+      - CRAWLER_DATABASE_HOST=${CRAWLER_DATABASE_HOST:-}
+      - CRAWLER_DATABASE_PORT=${CRAWLER_DATABASE_PORT:-5432}
+      - CRAWLER_DATABASE_USER=${CRAWLER_DATABASE_USER:-}
+      - CRAWLER_DATABASE_PASSWORD=${CRAWLER_DATABASE_PASSWORD:-}
+      - CRAWLER_DATABASE_NAME=${CRAWLER_DATABASE_NAME:-}
       # Add any Viper-backed env here:
       # - LOG_LEVEL=info
       # - STORAGE_DIR=/data   # if you write fetched pages locally

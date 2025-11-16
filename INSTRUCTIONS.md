@@ -162,7 +162,7 @@ standard_jobs:
 
 ### 2.10 Retrieval Persistence
 
-The worker mirrors each successful fetch into Postgres using three tables. When `database.dsn` is provided, ensure the following tables exist:
+The worker mirrors each successful fetch into Postgres using three tables. When database connectivity is provided (either via `database.dsn` or the discrete host/user/password settings), ensure the following tables exist:
 
 #### Retrievals Table (default: `crawl`, configured via `database.retrieval_table`)
 

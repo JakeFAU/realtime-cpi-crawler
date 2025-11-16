@@ -20,12 +20,19 @@ spec:
           env:
             - name: GO_ENV
               value: production
-            - name: DB_HOST
-              value: ${DB_HOST}
-            - name: DB_PORT
-              value: "${DB_PORT}"
-            - name: CRAWLER_DATABASE_DSN
-              value: ${CRAWLER_DATABASE_DSN}
+            - name: CRAWLER_DATABASE_HOST
+              value: ${CRAWLER_DATABASE_HOST}
+            - name: CRAWLER_DATABASE_PORT
+              value: "${CRAWLER_DATABASE_PORT}"
+            - name: CRAWLER_DATABASE_USER
+              value: ${CRAWLER_DATABASE_USER}
+            - name: CRAWLER_DATABASE_NAME
+              value: ${CRAWLER_DATABASE_NAME}
+            - name: CRAWLER_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ${DB_PASSWORD_SECRET_NAME}
+                  key: ${DB_PASSWORD_SECRET_VERSION}
             - name: CRAWLER_STORAGE_BACKEND
               value: ${CRAWLER_STORAGE_BACKEND}
           resources:
