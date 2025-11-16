@@ -304,7 +304,8 @@ func (w *Worker) persistAndPublish(
 	}
 
 	storedAt := w.clock.Now().UTC()
-	basePath := w.buildBlobPath(storedAt, extractHost(resp.URL), pageID)
+	site := extractHost(resp.URL)
+	basePath := w.buildBlobPath(storedAt, site, pageID)
 
 	rawPath := path.Join(basePath, "raw.html")
 	uri, err := w.blobStore.PutObject(ctx, rawPath, w.cfg.ContentType, resp.Body)
@@ -313,8 +314,8 @@ func (w *Worker) persistAndPublish(
 	}
 
 	headersPath := path.Join(basePath, "headers.json")
-	if err := w.putJSON(ctx, headersPath, normalizeHeaders(resp.Headers)); err != nil {
-		return fmt.Errorf("put headers: %w", err)
+	if _, innerErr := w.putJSON(ctx, headersPath, normalizeHeaders(resp.Headers)); innerErr != nil {
+		return fmt.Errorf("put headers: %w", innerErr)
 	}
 
 	metaPath := path.Join(basePath, "meta.json")
@@ -329,7 +330,8 @@ func (w *Worker) persistAndPublish(
 		ParentID:    "",
 		JobUUID:     jobID,
 	}
-	if err := w.putJSON(ctx, metaPath, meta); err != nil {
+	metaURI, err := w.putJSON(ctx, metaPath, meta)
+	if err != nil {
 		return fmt.Errorf("put meta: %w", err)
 	}
 
@@ -361,7 +363,7 @@ func (w *Worker) persistAndPublish(
 		return err
 	}
 
-	if err := w.publishResult(ctx, jobID, url, uri, hash, resp, pageID); err != nil {
+	if err := w.publishResult(ctx, jobID, site, url, uri, metaURI, hash, resp, pageID); err != nil {
 		return err
 	}
 	return nil
@@ -370,8 +372,10 @@ func (w *Worker) persistAndPublish(
 func (w *Worker) publishResult(
 	ctx context.Context,
 	jobID string,
+	site string,
 	url string,
-	uri string,
+	htmlURI string,
+	metaURI string,
 	hash string,
 	resp crawler.FetchResponse,
 	pageID string,
@@ -380,14 +384,10 @@ func (w *Worker) publishResult(
 		return nil
 	}
 	payload := map[string]any{
-		"job_id":    jobID,
-		"page_id":   pageID,
-		"url":       url,
-		"blob_uri":  uri,
-		"hash":      hash,
-		"timestamp": w.clock.Now().Format(time.RFC3339),
-		"status":    resp.StatusCode,
-		"headless":  resp.UsedHeadless,
+		"crawl_id":  jobID,
+		"site":      site,
+		"html_blob": htmlURI,
+		"meta_blob": metaURI,
 	}
 	if _, err := w.publisher.Publish(ctx, w.cfg.Topic, payload); err != nil {
 		return fmt.Errorf("publish payload: %w", err)
@@ -396,7 +396,8 @@ func (w *Worker) publishResult(
 		zap.String("job_id", jobID),
 		zap.String("page_id", pageID),
 		zap.String("url", url),
-		zap.String("blob_uri", uri),
+		zap.String("html_blob", htmlURI),
+		zap.String("meta_blob", metaURI),
 		zap.String("hash", hash),
 		zap.Bool("headless", resp.UsedHeadless),
 	)
@@ -413,15 +414,16 @@ type pageMetaPayload struct {
 	JobUUID     string `json:"job_uuid"`
 }
 
-func (w *Worker) putJSON(ctx context.Context, objectPath string, payload any) error {
+func (w *Worker) putJSON(ctx context.Context, objectPath string, payload any) (string, error) {
 	data, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("marshal json: %w", err)
+		return "", fmt.Errorf("marshal json: %w", err)
 	}
-	if _, err := w.blobStore.PutObject(ctx, objectPath, "application/json", data); err != nil {
-		return fmt.Errorf("put object: %w", err)
+	uri, err := w.blobStore.PutObject(ctx, objectPath, "application/json", data)
+	if err != nil {
+		return "", fmt.Errorf("put object: %w", err)
 	}
-	return nil
+	return uri, nil
 }
 
 func normalizeHeaders(h http.Header) map[string][]string {
