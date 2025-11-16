@@ -135,7 +135,12 @@ func (c *DatabaseConfig) resolveDSN() error { //nolint:gocyclo // helper enumera
 	if port == 0 {
 		port = 5432
 	}
-	hostPort := net.JoinHostPort(c.Host, strconv.Itoa(port))
+	// Normalize c.Host: remove brackets if present (for IPv6)
+	host := c.Host
+	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		host = host[1:len(host)-1]
+	}
+	hostPort := net.JoinHostPort(host, strconv.Itoa(port))
 	u := url.URL{
 		Scheme: "postgres",
 		User:   url.UserPassword(c.User, c.Password),
