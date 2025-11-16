@@ -209,7 +209,7 @@ The worker mirrors each successful fetch into Postgres using three tables. When 
 
 The crawler only inserts rows; downstream services can extend these tables with additional columns for processing flags or AI pipeline state.
 
-When Cloud Pub/Sub is enabled, each retrieval also results in a JSON payload (containing `crawl_id`, `site`, `html_blob`, `meta_blob`) being published to `pubsub.topic_name` for the AI processing tier.
+When Cloud Pub/Sub is enabled, each retrieval also results in a JSON payload (containing `crawl_id`, `job_id`, `site`, `url`, `html_blob`, `meta_blob`, `schema_version`) being published to `pubsub.topic_name` for the AI processing tier.
 
 ## 3. API Details
 

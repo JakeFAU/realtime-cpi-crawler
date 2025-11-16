@@ -166,10 +166,13 @@ When both `pubsub.project_id` and `pubsub.topic_name` are provided, each success
 ```json
 {
   "crawl_id": "job-uuid",
+  "job_id": "external-job-uuid",
   "site": "example.com",
+  "url": "https://example.com/page",
   "html_blob": "gs://bucket/…/raw.html",
-  "meta_blob": "gs://bucket/…/meta.json"
+  "meta_blob": "gs://bucket/…/meta.json",
+  "schema_version": "1"
 }
 ```
 
-`html_blob` contains the raw HTML, while `meta_blob` references the metadata JSON written alongside the HTML (status, size, hash, etc.). This allows an AI post-processor to pick up work as soon as the retrieval lands without polling Postgres.
+`html_blob` contains the raw HTML, while `meta_blob` references the metadata JSON written alongside the HTML (status, size, hash, etc.). `job_id` mirrors the upstream caller supplied identifier (today equivalent to `crawl_id`), `url` captures the fully qualified page, and `schema_version` aids backwards-compatible migrations. This allows an AI post-processor to pick up work as soon as the retrieval lands without polling Postgres.

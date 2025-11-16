@@ -90,9 +90,12 @@ func TestWorker_ProcessJob_SuccessFlow(t *testing.T) {
 	require.Len(t, publisher.messages, 1)
 	msg := publisher.messages[0]
 	require.Equal(t, jobUUID, msg["crawl_id"])
+	require.Equal(t, jobUUID, msg["job_id"])
 	require.Equal(t, "example.com", msg["site"])
+	require.Equal(t, "https://example.com", msg["url"])
 	require.Equal(t, "memory://crawl/202501/02/15/host=example.com/id=page-success/raw.html", msg["html_blob"])
 	require.Equal(t, "memory://crawl/202501/02/15/host=example.com/id=page-success/meta.json", msg["meta_blob"])
+	require.Equal(t, pubSubSchemaVersion, msg["schema_version"])
 	require.Equal(t, crawler.JobCounters{PagesSucceeded: 1}, jobStore.lastCounters())
 	require.Len(t, retrievalStore.records(), 1)
 	rec := retrievalStore.records()[0]
