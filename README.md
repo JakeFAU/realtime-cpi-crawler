@@ -161,19 +161,15 @@ When `database.dsn` is provided, the crawler persists data to three Postgres tab
 
 The worker only performs inserts; downstream consumers own any additional processing flags.
 
-When both `pubsub.project_id` and `pubsub.topic_name` are provided, each successful fetch is published to Google Cloud Pub/Sub as a compact JSON document:
+When both `pubsub.project_id` and `pubsub.topic_name` are provided, each successful fetch is published to Google Cloud Pub/Sub as a compact JSON document tailored for the AI stack handoff:
 
 ```json
 {
-  "job_id": "job-uuid",
-  "page_id": "page-uuid",
-  "url": "https://example.com",
-  "blob_uri": "gs://bucket/…/raw.html",
-  "hash": "sha256",
-  "status": 200,
-  "headless": false,
-  "timestamp": "2025-01-02T15:04:05Z"
+  "crawl_id": "job-uuid",
+  "site": "example.com",
+  "html_blob": "gs://bucket/…/raw.html",
+  "meta_blob": "gs://bucket/…/meta.json"
 }
 ```
 
-This allows an AI post-processor to pick up work as soon as the retrieval lands without polling Postgres.
+`html_blob` contains the raw HTML, while `meta_blob` references the metadata JSON written alongside the HTML (status, size, hash, etc.). This allows an AI post-processor to pick up work as soon as the retrieval lands without polling Postgres.
