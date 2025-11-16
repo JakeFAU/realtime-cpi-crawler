@@ -46,6 +46,8 @@ type Worker struct {
 	progress        progress.Emitter
 }
 
+const pubSubSchemaVersion = "1"
+
 // New constructs a Worker.
 func New(
 	queue crawler.Queue,
@@ -384,10 +386,13 @@ func (w *Worker) publishResult(
 		return nil
 	}
 	payload := map[string]any{
-		"crawl_id":  jobID,
-		"site":      site,
-		"html_blob": htmlURI,
-		"meta_blob": metaURI,
+		"crawl_id":       jobID,
+		"job_id":         jobID,
+		"site":           site,
+		"url":            url,
+		"html_blob":      htmlURI,
+		"meta_blob":      metaURI,
+		"schema_version": pubSubSchemaVersion,
 	}
 	if _, err := w.publisher.Publish(ctx, w.cfg.Topic, payload); err != nil {
 		return fmt.Errorf("publish payload: %w", err)
