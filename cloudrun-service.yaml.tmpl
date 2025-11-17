@@ -32,7 +32,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: ${DB_PASSWORD_SECRET_NAME}
-                  key: ${DB_PASSWORD_SECRET_VERSION}
+                  key: "${DB_PASSWORD_SECRET_VERSION}"
             - name: CRAWLER_STORAGE_BACKEND
               value: ${CRAWLER_STORAGE_BACKEND}
           resources:
