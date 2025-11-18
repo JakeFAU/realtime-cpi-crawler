@@ -386,7 +386,7 @@ func (w *Worker) publishResult(
 		return nil
 	}
 	payload := map[string]any{
-		"crawl_id":       jobID,
+		"crawl_id":       pageID,
 		"job_id":         jobID,
 		"site":           site,
 		"url":            url,

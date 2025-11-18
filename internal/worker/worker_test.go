@@ -89,7 +89,7 @@ func TestWorker_ProcessJob_SuccessFlow(t *testing.T) {
 	require.Contains(t, blobStore.objects, "crawl/202501/02/15/host=example.com/id=page-success/meta.json")
 	require.Len(t, publisher.messages, 1)
 	msg := publisher.messages[0]
-	require.Equal(t, jobUUID, msg["crawl_id"])
+	require.Equal(t, "page-success", msg["crawl_id"])
 	require.Equal(t, jobUUID, msg["job_id"])
 	require.Equal(t, "example.com", msg["site"])
 	require.Equal(t, "https://example.com", msg["url"])
