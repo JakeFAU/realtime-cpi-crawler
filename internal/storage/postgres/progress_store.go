@@ -123,6 +123,8 @@ func (s *ProgressStore) UpsertSiteStats(
 			fetch4xx = deltaVisits
 		case "5xx":
 			fetch5xx = deltaVisits
+		default:
+			return fmt.Errorf("unknown status class: %s", statusClass)
 		}
 
 		query = `
