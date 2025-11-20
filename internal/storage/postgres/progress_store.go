@@ -113,17 +113,36 @@ func (s *ProgressStore) UpsertSiteStats(
 		return fmt.Errorf("failed to update site stats: %w", err)
 	}
 	if res.RowsAffected() == 0 {
+		var fetch2xx, fetch3xx, fetch4xx, fetch5xx int64
+		switch statusClass {
+		case "2xx":
+			fetch2xx = deltaVisits
+		case "3xx":
+			fetch3xx = deltaVisits
+		case "4xx":
+			fetch4xx = deltaVisits
+		case "5xx":
+			fetch5xx = deltaVisits
+		}
+
 		query = `
 			INSERT INTO site_stats (job_id, site, last_update, visits, bytes_total, fetch_2xx, fetch_3xx, fetch_4xx, fetch_5xx)
-			VALUES ($1, $2, $3, $4, $5,
-				CASE WHEN $6 = '2xx' THEN $4 ELSE 0 END,
-				CASE WHEN $6 = '3xx' THEN $4 ELSE 0 END,
-				CASE WHEN $6 = '4xx' THEN $4 ELSE 0 END,
-				CASE WHEN $6 = '5xx' THEN $4 ELSE 0 END
-			)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 			ON CONFLICT (job_id, site) DO NOTHING;
 		`
-		_, err = s.pool.Exec(ctx, query, jobID, site, at, deltaVisits, deltaBytes, statusClass)
+		_, err = s.pool.Exec(
+			ctx,
+			query,
+			jobID,
+			site,
+			at,
+			deltaVisits,
+			deltaBytes,
+			fetch2xx,
+			fetch3xx,
+			fetch4xx,
+			fetch5xx,
+		)
 		if err != nil {
 			return fmt.Errorf("failed to insert site stats: %w", err)
 		}
