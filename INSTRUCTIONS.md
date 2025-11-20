@@ -131,7 +131,7 @@ metrics:
 progress:
   enabled: true
   buffer_size: 4096
-  sink_timeout_ms: 2000
+  sink_timeout_ms: 10000
   log_enabled: false
   batch:
     max_events: 1000
@@ -144,7 +144,7 @@ progress:
 - `progress.buffer_size` configures hub channel capacity for buffering progress events.
 - `progress.batch.max_events` flushes after this many events accumulate.
 - `progress.batch.max_wait_ms` flushes after this many milliseconds even if under max_events.
-- `progress.sink_timeout_ms` bounds per-sink consume calls.
+- `progress.sink_timeout_ms` bounds per-sink consume calls (default: 10000ms).
 - `progress.log_enabled` toggles the LogSink for debugging progress events.
 
 ### 2.9 Standard Jobs Templates

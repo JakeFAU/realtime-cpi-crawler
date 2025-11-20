@@ -14,7 +14,7 @@ import (
 //   - BufferSize: size of the internal channel (default 4096).
 //   - MaxBatchEvents: flush once this many events queue (default 1000).
 //   - MaxBatchWait: flush after this duration even if the batch is small (default 500ms).
-//   - SinkTimeout: per-sink timeout while flushing (default 2s).
+//   - SinkTimeout: per-sink timeout while flushing (default 10s).
 //   - BaseContext: parent context passed to sink calls (defaults to context.Background()).
 //   - Logger: optional structured logger used for warnings.
 type Config struct {
@@ -30,7 +30,7 @@ const (
 	defaultBufferSize     = 4096
 	defaultMaxBatchEvents = 1000
 	defaultMaxBatchWait   = 500 * time.Millisecond
-	defaultSinkTimeout    = 2 * time.Second
+	defaultSinkTimeout    = 10 * time.Second
 	dropLogInterval       = 5 * time.Second
 )
 
@@ -222,19 +222,20 @@ func (h *Hub) flush(batch []Event) {
 		return
 	}
 	copyBatch := append([]Event(nil), batch...)
-	ctx := h.cfg.BaseContext
-	if h.cfg.SinkTimeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, h.cfg.SinkTimeout)
-		defer cancel()
-	}
+	baseCtx := h.cfg.BaseContext
 	for _, sink := range h.sinks {
 		if sink == nil {
 			continue
 		}
+		ctx := baseCtx
+		cancel := func() {}
+		if h.cfg.SinkTimeout > 0 {
+			ctx, cancel = context.WithTimeout(baseCtx, h.cfg.SinkTimeout)
+		}
 		if err := sink.Consume(ctx, copyBatch); err != nil {
 			h.logger.Warn("progress sink consume failed", zap.Error(err))
 		}
+		cancel()
 	}
 }
 

@@ -185,7 +185,7 @@ type ProgressConfig struct {
 	BufferSize int `mapstructure:"buffer_size"`
 	// Batch controls flush thresholds.
 	Batch ProgressBatchConfig `mapstructure:"batch"`
-	// SinkTimeoutMs bounds per-sink Consume calls (default 2000).
+	// SinkTimeoutMs bounds per-sink Consume calls (default 10000).
 	SinkTimeoutMs int `mapstructure:"sink_timeout_ms"`
 	// LogEnabled toggles the LogSink for debugging (default false).
 	LogEnabled bool `mapstructure:"log_enabled"`
@@ -257,7 +257,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("progress.buffer_size", 4096)
 	v.SetDefault("progress.batch.max_events", 1000)
 	v.SetDefault("progress.batch.max_wait_ms", 500)
-	v.SetDefault("progress.sink_timeout_ms", 2000)
+	v.SetDefault("progress.sink_timeout_ms", 10000)
 	v.SetDefault("progress.log_enabled", false)
 }
 
