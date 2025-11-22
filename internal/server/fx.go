@@ -55,6 +55,7 @@ type App struct {
 	progressRepo    store.ProgressRepository
 	tracerShutdown  func(context.Context) error
 	metricShutdown  func(context.Context) error
+	headlessFetcher *headlessfetcher.Fetcher
 }
 
 // NewApp creates a new App with the given configuration.
@@ -123,6 +124,9 @@ func (a *App) Close(ctx context.Context) error {
 
 //nolint:gocognit // Shutdown logic is linear but extensive, ignoring complexity check
 func (a *App) closeInfrastructure(ctx context.Context) {
+	if a.headlessFetcher != nil {
+		a.headlessFetcher.Close()
+	}
 	if a.progressHub != nil {
 		if err := a.progressHub.Close(ctx); err != nil {
 			a.logger.Warn("progress hub close failed", zap.Error(err))
@@ -372,15 +376,17 @@ func setupDispatcher(
 	var headless crawler.Fetcher
 	if app.cfg.Headless.Enabled {
 		var err error
-		headless, err = headlessfetcher.NewChromedp(headlessfetcher.Config{
+		app.headlessFetcher, err = headlessfetcher.NewChromedp(headlessfetcher.Config{
 			MaxParallel:       app.cfg.Headless.MaxParallel,
 			UserAgent:         app.cfg.Crawler.UserAgent,
 			NavigationTimeout: time.Duration(app.cfg.Headless.NavTimeoutSec) * time.Millisecond,
 		})
 		if err != nil {
 			app.logger.Warn("headless fetcher init failed", zap.Error(err))
+		} else {
+			headless = app.headlessFetcher
+			app.logger.Info("using headless fetcher", zap.Int("max_parallel", app.cfg.Headless.MaxParallel))
 		}
-		app.logger.Info("using headless fetcher", zap.Int("max_parallel", app.cfg.Headless.MaxParallel))
 	}
 
 	workerCfg := worker.Config{
