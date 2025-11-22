@@ -74,7 +74,6 @@ func NewServer(
 	r.Use(telemetry.Middleware)
 	r.Use(s.loggingMiddleware)
 	r.Use(s.recoverMiddleware)
-	r.Use(s.recoverMiddleware)
 	// Use configured timeout or default to 60s
 	timeout := 60 * time.Second
 	if cfg.Server.TimeoutSeconds > 0 {
