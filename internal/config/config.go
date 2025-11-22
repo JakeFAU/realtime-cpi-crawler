@@ -374,7 +374,8 @@ func (c Config) Validate() error {
 		return fmt.Errorf("application.application_name must be set")
 	}
 	if c.Application.Version == "" {
-		c.Application.Version = "1.0.0"
+		// Defaulting handled in setDefaults(); do not assign here.
+		// return fmt.Errorf("application.version must be set") // Optionally, enforce as required
 	}
 	if c.Application.ProjectID == "" {
 		return fmt.Errorf("application.project_id must be set")
