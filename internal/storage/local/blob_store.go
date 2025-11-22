@@ -84,7 +84,7 @@ func (s *BlobStore) PutObject(_ context.Context, path string, _ string, data io.
 	}
 
 	// Write the file.
-	err = os.WriteFile(fullPath, byteData, 0o600) // Use byteData here
+	err := os.WriteFile(fullPath, byteData, 0o600) // Use byteData here
 	if err != nil {
 		return "", fmt.Errorf("failed to write file: %w", err)
 	}
