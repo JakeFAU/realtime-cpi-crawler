@@ -4,6 +4,7 @@ package gcs
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 
 	"cloud.google.com/go/storage"
@@ -35,7 +36,7 @@ func New(client *storage.Client, cfg Config) (*BlobStore, error) {
 }
 
 // PutObject uploads data to the configured bucket and returns a gs:// URI.
-func (s *BlobStore) PutObject(ctx context.Context, path string, contentType string, data []byte) (string, error) {
+func (s *BlobStore) PutObject(ctx context.Context, path string, contentType string, r io.Reader) (string, error) {
 	if strings.TrimSpace(path) == "" {
 		return "", fmt.Errorf("path is required")
 	}
@@ -43,12 +44,12 @@ func (s *BlobStore) PutObject(ctx context.Context, path string, contentType stri
 	if contentType != "" {
 		writer.ContentType = contentType
 	}
-	if _, err := writer.Write(data); err != nil {
+	if _, err := io.Copy(writer, r); err != nil {
 		closeErr := writer.Close()
 		if closeErr != nil {
-			return "", fmt.Errorf("write object: %w (close writer: %v)", err, closeErr)
+			return "", fmt.Errorf("copy object: %w (close writer: %v)", err, closeErr)
 		}
-		return "", fmt.Errorf("write object: %w", err)
+		return "", fmt.Errorf("copy object: %w", err)
 	}
 	if err := writer.Close(); err != nil {
 		return "", fmt.Errorf("close writer: %w", err)

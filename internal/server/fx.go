@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	"cloud.google.com/go/pubsub"
+	pubsub "cloud.google.com/go/pubsub/v2"
 	"cloud.google.com/go/storage"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/api"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/clock/system"
@@ -42,18 +42,20 @@ import (
 
 // App contains the application's dependencies.
 type App struct {
-	cfg            *config.Config
-	logger         *zap.Logger
-	apiServer      *api.Server
-	dispatch       *dispatcher.Dispatcher
-	progressHub    *progress.Hub
-	queue          *queueMemory.Queue
-	pubsubClient   *pubsub.Client
-	pubsubTopic    *pubsub.Topic
-	storage        *storage.Client
-	retrievalStore crawler.RetrievalStore
-	progressRepo   store.ProgressRepository
-	tracerShutdown func(context.Context) error
+	cfg             *config.Config
+	logger          *zap.Logger
+	apiServer       *api.Server
+	dispatch        *dispatcher.Dispatcher
+	progressHub     *progress.Hub
+	queue           *queueMemory.Queue
+	pubsubClient    *pubsub.Client
+	pubsubPublisher *pubsub.Publisher
+	storage         *storage.Client
+	retrievalStore  crawler.RetrievalStore
+	progressRepo    store.ProgressRepository
+	tracerShutdown  func(context.Context) error
+	metricShutdown  func(context.Context) error
+	headlessFetcher *headlessfetcher.Fetcher
 }
 
 // NewApp creates a new App with the given configuration.
@@ -112,17 +114,26 @@ func (a *App) Run(ctx context.Context) error {
 }
 
 // Close gracefully shuts down the application.
-//
-//nolint:gocognit
 func (a *App) Close(ctx context.Context) error {
 	a.queue.Close()
+	a.closeInfrastructure(ctx)
+	a.closeObservability(ctx)
+	a.logger.Info("shutdown complete")
+	return nil
+}
+
+//nolint:gocognit // Shutdown logic is linear but extensive, ignoring complexity check
+func (a *App) closeInfrastructure(ctx context.Context) {
+	if a.headlessFetcher != nil {
+		a.headlessFetcher.Close()
+	}
 	if a.progressHub != nil {
 		if err := a.progressHub.Close(ctx); err != nil {
 			a.logger.Warn("progress hub close failed", zap.Error(err))
 		}
 	}
-	if a.pubsubTopic != nil {
-		a.pubsubTopic.Stop()
+	if a.pubsubPublisher != nil {
+		a.pubsubPublisher.Stop()
 	}
 	if a.pubsubClient != nil {
 		if err := a.pubsubClient.Close(); err != nil {
@@ -144,6 +155,9 @@ func (a *App) Close(ctx context.Context) error {
 			pgRepo.Close()
 		}
 	}
+}
+
+func (a *App) closeObservability(ctx context.Context) {
 	if err := a.logger.Sync(); err != nil {
 		a.logger.Warn("logger sync failed", zap.Error(err))
 	}
@@ -152,8 +166,11 @@ func (a *App) Close(ctx context.Context) error {
 			a.logger.Warn("tracer shutdown failed", zap.Error(err))
 		}
 	}
-	a.logger.Info("shutdown complete")
-	return nil
+	if a.metricShutdown != nil {
+		if err := a.metricShutdown(ctx); err != nil {
+			a.logger.Warn("metric shutdown failed", zap.Error(err))
+		}
+	}
 }
 
 // Build creates the application's dependencies.
@@ -170,17 +187,12 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	}
 
 	// Initialize tracing
-	tp, err := telemetry.InitTracerProvider(ctx, "webcrawler")
+	tp, mp, err := telemetry.InitTelemetry(ctx, cfg)
 	if err != nil {
-		// Log error but don't fail? Or fail?
-		// Plan says "Implement Tracing".
-		// Let's log and continue or fail.
-		// Ideally fail if observability is critical.
-		// But for now, let's just log warning if it fails, or fail.
-		// Let's fail to be safe.
 		return nil, fmt.Errorf("tracer init failed: %w", err)
 	}
 	app.tracerShutdown = tp.Shutdown
+	app.metricShutdown = mp.Shutdown
 
 	app.logger.Info("building application dependencies")
 	jobStore := memoryStorage.NewJobStore()
@@ -289,13 +301,13 @@ func setupPublisher(ctx context.Context, app *App) (crawler.Publisher, error) {
 	if err != nil {
 		return nil, fmt.Errorf("pubsub client init failed: %w", err)
 	}
-	app.pubsubTopic = app.pubsubClient.Topic(app.cfg.PubSub.TopicName)
+	app.pubsubPublisher = app.pubsubClient.Publisher(app.cfg.PubSub.TopicName)
 	app.logger.Info(
 		"Pub/Sub publisher initialized",
 		zap.String("project", app.cfg.PubSub.ProjectID),
 		zap.String("topic", app.cfg.PubSub.TopicName),
 	)
-	return gcppublisher.New(app.pubsubTopic), nil
+	return gcppublisher.New(app.pubsubPublisher), nil
 }
 
 func setupProgress(
@@ -364,15 +376,17 @@ func setupDispatcher(
 	var headless crawler.Fetcher
 	if app.cfg.Headless.Enabled {
 		var err error
-		headless, err = headlessfetcher.NewChromedp(headlessfetcher.Config{
+		app.headlessFetcher, err = headlessfetcher.NewChromedp(headlessfetcher.Config{
 			MaxParallel:       app.cfg.Headless.MaxParallel,
 			UserAgent:         app.cfg.Crawler.UserAgent,
 			NavigationTimeout: time.Duration(app.cfg.Headless.NavTimeoutSec) * time.Millisecond,
 		})
 		if err != nil {
 			app.logger.Warn("headless fetcher init failed", zap.Error(err))
+		} else {
+			headless = app.headlessFetcher
+			app.logger.Info("using headless fetcher", zap.Int("max_parallel", app.cfg.Headless.MaxParallel))
 		}
-		app.logger.Info("using headless fetcher", zap.Int("max_parallel", app.cfg.Headless.MaxParallel))
 	}
 
 	workerCfg := worker.Config{

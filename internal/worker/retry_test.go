@@ -7,8 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/JakeFAU/realtime-cpi-crawler/internal/config"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/crawler"
-	"github.com/JakeFAU/realtime-cpi-crawler/internal/metrics"
+	"github.com/JakeFAU/realtime-cpi-crawler/internal/telemetry"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
@@ -35,7 +36,10 @@ func (f *countingFetcher) Fetch(_ context.Context, req crawler.FetchRequest) (cr
 
 func TestWorker_RetryLogic(t *testing.T) {
 	t.Parallel()
-	metrics.Init()
+	cfg := config.Config{}
+	if _, _, err := telemetry.InitTelemetry(context.Background(), &cfg); err != nil {
+		t.Fatalf("failed to init telemetry: %v", err)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -95,7 +99,10 @@ func TestWorker_RetryLogic(t *testing.T) {
 
 func TestWorker_RetryExhausted(t *testing.T) {
 	t.Parallel()
-	metrics.Init()
+	cfg := config.Config{}
+	if _, _, err := telemetry.InitTelemetry(context.Background(), &cfg); err != nil {
+		t.Fatalf("failed to init telemetry: %v", err)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

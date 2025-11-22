@@ -117,6 +117,7 @@ linters:
             - github.com/jackc/pgx/v5
             - github.com/pashagolub/pgxmock/v4
             - go.opentelemetry.io/
+            - github.com/GoogleCloudPlatform
           # Deny specific problematic packages
           deny:
             - pkg: "math/rand$"

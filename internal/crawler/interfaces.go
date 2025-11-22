@@ -3,6 +3,7 @@ package crawler
 
 import (
 	"context"
+	"io"
 	"time"
 )
 
@@ -17,7 +18,7 @@ type JobStore interface {
 
 // BlobStore writes raw artifacts and returns a URI.
 type BlobStore interface {
-	PutObject(ctx context.Context, path string, contentType string, data []byte) (string, error)
+	PutObject(ctx context.Context, path string, contentType string, data io.Reader) (string, error)
 }
 
 // RetrievalStore writes normalized retrieval rows to a downstream database.

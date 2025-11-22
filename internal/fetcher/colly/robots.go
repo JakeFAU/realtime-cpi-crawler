@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/crawler"
-	"github.com/JakeFAU/realtime-cpi-crawler/internal/metrics"
+	"github.com/JakeFAU/realtime-cpi-crawler/internal/telemetry"
 )
 
 const (
@@ -99,7 +99,7 @@ func (s *robotsProbeState) markIndeterminate(reason string) {
 	}
 	s.status = crawler.RobotsStatusIndeterminate
 	s.reason = reason
-	metrics.ObserveProbeTLSHandshakeTimeout()
+	telemetry.ObserveProbeTLSHandshakeTimeout()
 }
 
 func cloneRequest(req *http.Request) *http.Request {

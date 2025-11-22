@@ -18,8 +18,9 @@ import (
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/config"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/crawler"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/dispatcher"
-	"github.com/JakeFAU/realtime-cpi-crawler/internal/metrics"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/store"
+	"github.com/JakeFAU/realtime-cpi-crawler/internal/telemetry"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Server wires HTTP handlers to the dispatcher and stores.
@@ -34,6 +35,15 @@ type Server struct {
 	progress   *ProgressHandler
 }
 
+type loggerKey struct{}
+
+func (s *Server) loggerFromContext(ctx context.Context) *zap.Logger {
+	if logger, ok := ctx.Value(loggerKey{}).(*zap.Logger); ok {
+		return logger
+	}
+	return s.logger
+}
+
 // NewServer constructs a Server with middleware and routes.
 func NewServer(
 	jobStore crawler.JobStore,
@@ -44,7 +54,12 @@ func NewServer(
 	logger *zap.Logger,
 	progressRepo store.ProgressRepository,
 ) *Server {
-	metrics.Init()
+	if _, _, err := telemetry.InitTelemetry(
+		context.Background(),
+		&cfg,
+	); err != nil {
+		logger.Error("failed to initialize telemetry", zap.Error(err))
+	}
 	s := &Server{
 		jobStore:   jobStore,
 		dispatcher: dispatcher,
@@ -56,9 +71,8 @@ func NewServer(
 	}
 	r := chi.NewRouter()
 	r.Use(requestIDMiddleware)
-	r.Use(metrics.Middleware)
+	r.Use(telemetry.Middleware)
 	r.Use(s.loggingMiddleware)
-	r.Use(s.recoverMiddleware)
 	r.Use(s.recoverMiddleware)
 	// Use configured timeout or default to 60s
 	timeout := 60 * time.Second
@@ -73,7 +87,7 @@ func NewServer(
 	r.Get("/healthz", s.healthz)
 	r.Get("/readyz", s.readyz)
 	if cfg.Metrics.Enabled {
-		r.Handle(cfg.Metrics.Path, metrics.Handler())
+		r.Handle(cfg.Metrics.Path, telemetry.Handler())
 	}
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/jobs", s.progress.ListJobs)
@@ -111,7 +125,8 @@ func (s *Server) readyz(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) submitCustomJob(w http.ResponseWriter, r *http.Request) {
-	s.logger.Info(
+	logger := s.loggerFromContext(r.Context())
+	logger.Info(
 		"Submit custom job endpoint hit",
 		zap.String("request_id",
 			requestIDFromContext(r.Context())),
@@ -121,12 +136,12 @@ func (s *Server) submitCustomJob(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
-	params, err := s.toJobParameters(req)
+	params, err := s.toJobParameters(req, logger)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.logger.Debug("custom job submitted", zap.Strings("urls", params.URLs))
+	logger.Debug("custom job submitted", zap.Strings("urls", params.URLs))
 	jobID, err := s.enqueueJob(r.Context(), params)
 	if err != nil {
 		status := http.StatusInternalServerError
@@ -140,7 +155,8 @@ func (s *Server) submitCustomJob(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) submitStandardJob(w http.ResponseWriter, r *http.Request) {
-	s.logger.Info(
+	logger := s.loggerFromContext(r.Context())
+	logger.Info(
 		"Submit standard job endpoint hit",
 		zap.String("request_id",
 			requestIDFromContext(r.Context())),
@@ -156,7 +172,7 @@ func (s *Server) submitStandardJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	params := s.applyDefaults(cloneJobParameters(templateParams))
-	s.logger.Info("standard job submitted", zap.String("template", req.Name), zap.Strings("urls", params.URLs))
+	logger.Info("standard job submitted", zap.String("template", req.Name), zap.Strings("urls", params.URLs))
 	jobID, err := s.enqueueJob(r.Context(), params)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -166,7 +182,8 @@ func (s *Server) submitStandardJob(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getJobStatus(w http.ResponseWriter, r *http.Request) {
-	s.logger.Info(
+	logger := s.loggerFromContext(r.Context())
+	logger.Info(
 		"get job status endpoint hit",
 		zap.String("request_id",
 			requestIDFromContext(r.Context())),
@@ -181,8 +198,9 @@ func (s *Server) getJobStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getJobResult(w http.ResponseWriter, r *http.Request) {
+	logger := s.loggerFromContext(r.Context())
 	jobID := chi.URLParam(r, "job_id")
-	s.logger.Info(
+	logger.Info(
 		"get job result endpoint hit",
 		zap.String("request_id",
 			requestIDFromContext(r.Context())),
@@ -202,8 +220,9 @@ func (s *Server) getJobResult(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) cancelJob(w http.ResponseWriter, r *http.Request) {
+	logger := s.loggerFromContext(r.Context())
 	jobID := chi.URLParam(r, "job_id")
-	s.logger.Info(
+	logger.Info(
 		"cancel job endpoint hit",
 		zap.String("request_id",
 			requestIDFromContext(r.Context())),
@@ -219,12 +238,13 @@ func (s *Server) cancelJob(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "job not found")
 		return
 	}
-	s.logger.Info("job canceled via API", zap.String("job_id", jobID))
+	logger.Info("job canceled via API", zap.String("job_id", jobID))
 	writeJSON(w, http.StatusOK, map[string]string{"job_id": jobID, "status": string(crawler.JobStatusCanceled)})
 }
 
 func (s *Server) enqueueJob(ctx context.Context, params crawler.JobParameters) (string, error) {
-	s.logger.Debug("enqueueing job", zap.Int("url_count", len(params.URLs)))
+	logger := s.loggerFromContext(ctx)
+	logger.Debug("enqueueing job", zap.Int("url_count", len(params.URLs)))
 	if len(params.URLs) == 0 {
 		return "", errors.New("at least one URL required")
 	}
@@ -255,12 +275,12 @@ func (s *Server) enqueueJob(ctx context.Context, params crawler.JobParameters) (
 	if err := s.dispatcher.Enqueue(queueCtx, item); err != nil {
 		return "", fmt.Errorf("enqueue job: %w", err)
 	}
-	s.logger.Info("job queued", zap.String("job_id", jobID), zap.Int("url_count", len(params.URLs)))
+	logger.Info("job queued", zap.String("job_id", jobID), zap.Int("url_count", len(params.URLs)))
 	return jobID, nil
 }
 
-func (s *Server) toJobParameters(req customJobRequest) (crawler.JobParameters, error) {
-	s.logger.Debug("converting custom job request to job parameters")
+func (s *Server) toJobParameters(req customJobRequest, logger *zap.Logger) (crawler.JobParameters, error) {
+	logger.Debug("converting custom job request to job parameters")
 	if len(req.URLs) == 0 {
 		return crawler.JobParameters{}, errors.New("urls required")
 	}
@@ -389,9 +409,20 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		ww := &responseWriter{ResponseWriter: w, status: http.StatusOK}
+
+		span := trace.SpanFromContext(r.Context())
+		logger := s.logger
+		if span.SpanContext().IsValid() {
+			traceID := span.SpanContext().TraceID().String()
+			logger = s.logger.With(zap.String("trace_id", traceID))
+		}
+		ctx := context.WithValue(r.Context(), loggerKey{}, logger)
+		r = r.WithContext(ctx)
+
 		next.ServeHTTP(ww, r)
 		route := routeLabel(r)
-		s.logger.Info("request completed",
+
+		logger.Info("request completed",
 			zap.String("method", r.Method),
 			zap.String("path", route),
 			zap.Int("status", ww.status),

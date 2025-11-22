@@ -1,16 +1,21 @@
-package metrics
+package telemetry
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/JakeFAU/realtime-cpi-crawler/internal/config"
 	"github.com/go-chi/chi/v5"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 func TestMiddleware(t *testing.T) {
-	Init()
+	cfg := config.Config{}
+	if _, _, err := InitTelemetry(context.Background(), &cfg); err != nil {
+		t.Fatalf("failed to init telemetry: %v", err)
+	}
 	r := chi.NewRouter()
 	r.Use(Middleware)
 	r.Get("/test", func(w http.ResponseWriter, _ *http.Request) {

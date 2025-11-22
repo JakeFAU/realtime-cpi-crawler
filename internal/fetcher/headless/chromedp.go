@@ -24,8 +24,10 @@ type Config struct {
 
 // Fetcher implements crawler.Fetcher using chromedp and headless Chrome.
 type Fetcher struct {
-	cfg     Config
-	limiter chan struct{}
+	cfg         Config
+	limiter     chan struct{}
+	allocator   context.Context
+	allocCancel context.CancelFunc
 }
 
 // NewChromedp creates a headless fetcher backed by chromedp.
@@ -40,10 +42,26 @@ func NewChromedp(cfg Config) (*Fetcher, error) {
 	if cfg.MaxParallel > 0 {
 		limiter = make(chan struct{}, cfg.MaxParallel)
 	}
+
+	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.Flag("headless", "new"),
+		chromedp.Flag("disable-gpu", true),
+		chromedp.Flag("hide-scrollbars", true),
+		chromedp.Flag("enable-automation", false),
+	)
+	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
+
 	return &Fetcher{
-		cfg:     cfg,
-		limiter: limiter,
+		cfg:         cfg,
+		limiter:     limiter,
+		allocator:   allocCtx,
+		allocCancel: allocCancel,
 	}, nil
+}
+
+// Close cancels the allocator context.
+func (f *Fetcher) Close() {
+	f.allocCancel()
 }
 
 // Fetch navigates with a headless browser and returns the fully rendered DOM.
@@ -53,14 +71,11 @@ func (f *Fetcher) Fetch(ctx context.Context, request crawler.FetchRequest) (craw
 	}
 	defer f.release()
 
-	navCtx, cancel := context.WithTimeout(ctx, f.navTimeout())
-	defer cancel()
-
-	allocCtx, allocCancel := chromedp.NewExecAllocator(navCtx, f.execAllocatorOptions()...)
-	defer allocCancel()
-
-	taskCtx, taskCancel := chromedp.NewContext(allocCtx)
+	taskCtx, taskCancel := chromedp.NewContext(f.allocator)
 	defer taskCancel()
+
+	taskCtx, cancel := context.WithTimeout(taskCtx, f.navTimeout())
+	defer cancel()
 
 	meta := newResponseMeta()
 	chromedp.ListenTarget(taskCtx, meta.captureEvent)
@@ -213,15 +228,6 @@ func (m *responseMeta) snapshotWithFallbacks(requestURL, finalURL string) (int, 
 		status = http.StatusOK
 	}
 	return status, headers, url
-}
-
-func (f *Fetcher) execAllocatorOptions() []chromedp.ExecAllocatorOption {
-	return append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", "new"),
-		chromedp.Flag("disable-gpu", true),
-		chromedp.Flag("hide-scrollbars", true),
-		chromedp.Flag("enable-automation", false),
-	)
 }
 
 func (f *Fetcher) navTimeout() time.Duration {

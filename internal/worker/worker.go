@@ -2,6 +2,7 @@
 package worker
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,8 +18,9 @@ import (
 
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/crawler"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/id/uuid"
-	"github.com/JakeFAU/realtime-cpi-crawler/internal/metrics"
+
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/progress"
+	"github.com/JakeFAU/realtime-cpi-crawler/internal/telemetry"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -140,8 +142,8 @@ func (w *Worker) processJob(ctx context.Context, item crawler.QueueItem) {
 	))
 	defer span.End()
 
-	metrics.IncActiveWorkers()
-	defer metrics.DecActiveWorkers()
+	telemetry.IncActiveWorkers()
+	defer telemetry.DecActiveWorkers()
 
 	jobCtx, cancel := w.jobContext(ctx, item.Params)
 	defer cancel()
@@ -194,7 +196,7 @@ func (w *Worker) processJob(ctx context.Context, item crawler.QueueItem) {
 	if err := w.updateJobStatus(ctx, item.JobID, status, errText, counters); err != nil {
 		w.logger.Error("final job status update failed", zap.String("job_id", item.JobID), zap.Error(err))
 	}
-	metrics.ObserveJob(string(status))
+	telemetry.ObserveJob(string(status))
 	if hasUUID {
 		w.emitJobCompletion(jobUUID, status, start, errText)
 	}
@@ -427,7 +429,7 @@ func (w *Worker) persistAndPublish(
 	basePath := w.buildBlobPath(storedAt, site, pageID)
 
 	rawPath := path.Join(basePath, "raw.html")
-	uri, err := w.blobStore.PutObject(ctx, rawPath, w.cfg.ContentType, resp.Body)
+	uri, err := w.blobStore.PutObject(ctx, rawPath, w.cfg.ContentType, bytes.NewReader(resp.Body))
 	if err != nil {
 		return fmt.Errorf("put raw object: %w", err)
 	}
@@ -456,7 +458,7 @@ func (w *Worker) persistAndPublish(
 
 	if len(resp.Screenshot) > 0 {
 		screenshotPath := path.Join(basePath, "screenshot.png")
-		if _, err := w.blobStore.PutObject(ctx, screenshotPath, "image/png", resp.Screenshot); err != nil {
+		if _, err := w.blobStore.PutObject(ctx, screenshotPath, "image/png", bytes.NewReader(resp.Screenshot)); err != nil {
 			return fmt.Errorf("put screenshot: %w", err)
 		}
 	}
@@ -541,7 +543,7 @@ func (w *Worker) putJSON(ctx context.Context, objectPath string, payload any) (s
 	if err != nil {
 		return "", fmt.Errorf("marshal json: %w", err)
 	}
-	uri, err := w.blobStore.PutObject(ctx, objectPath, "application/json", data)
+	uri, err := w.blobStore.PutObject(ctx, objectPath, "application/json", bytes.NewReader(data))
 	if err != nil {
 		return "", fmt.Errorf("put object: %w", err)
 	}
@@ -732,7 +734,7 @@ func (w *Worker) recordPage(url string, success bool, bytes int) {
 	if !success {
 		statusStr = "error"
 	}
-	metrics.ObserveCrawl(url, statusStr, bytes)
+	telemetry.ObserveCrawl(url, statusStr, bytes)
 }
 
 func (w *Worker) jobContext(

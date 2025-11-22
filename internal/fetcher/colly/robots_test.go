@@ -7,13 +7,17 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/JakeFAU/realtime-cpi-crawler/internal/config"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/crawler"
-	"github.com/JakeFAU/realtime-cpi-crawler/internal/metrics"
+	"github.com/JakeFAU/realtime-cpi-crawler/internal/telemetry"
 )
 
 func TestRobotsRetryReturnsAllowAllOnTimeout(t *testing.T) {
 	t.Parallel()
-	metrics.Init()
+	cfg := config.Config{}
+	if _, _, err := telemetry.InitTelemetry(context.Background(), &cfg); err != nil {
+		t.Fatalf("failed to init telemetry: %v", err)
+	}
 
 	state := newRobotsProbeState()
 	base := &stubRoundTripper{
@@ -60,7 +64,10 @@ func TestRobotsRetryReturnsAllowAllOnTimeout(t *testing.T) {
 
 func TestRobotsRetryStopsAfterSuccess(t *testing.T) {
 	t.Parallel()
-	metrics.Init()
+	cfg := config.Config{}
+	if _, _, err := telemetry.InitTelemetry(context.Background(), &cfg); err != nil {
+		t.Fatalf("failed to init telemetry: %v", err)
+	}
 
 	state := newRobotsProbeState()
 	base := &stubRoundTripper{

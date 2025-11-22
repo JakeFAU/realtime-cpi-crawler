@@ -2,6 +2,7 @@
 package local_test
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -69,7 +70,7 @@ func TestPutObject(t *testing.T) {
 	t.Run("ValidPut", func(t *testing.T) {
 		path := "test/object.txt"
 		data := []byte("hello world")
-		uri, err := store.PutObject(context.Background(), path, "text/plain", data)
+		uri, err := store.PutObject(context.Background(), path, "text/plain", bytes.NewReader(data))
 		require.NoError(t, err)
 
 		expectedURI := "file://" + filepath.Join(tempDir, path)
@@ -83,14 +84,14 @@ func TestPutObject(t *testing.T) {
 	})
 
 	t.Run("EmptyPath", func(t *testing.T) {
-		_, err := store.PutObject(context.Background(), "", "text/plain", []byte("data"))
+		_, err := store.PutObject(context.Background(), "", "text/plain", bytes.NewReader([]byte("data")))
 		assert.Error(t, err)
 	})
 
 	t.Run("NestedPath", func(t *testing.T) {
 		path := "a/b/c/object.txt"
 		data := []byte("nested hello")
-		uri, err := store.PutObject(context.Background(), path, "text/plain", data)
+		uri, err := store.PutObject(context.Background(), path, "text/plain", bytes.NewReader(data))
 		require.NoError(t, err)
 
 		expectedURI := "file://" + filepath.Join(tempDir, path)
