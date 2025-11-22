@@ -4,6 +4,7 @@ package memory
 import (
 	"context"
 	"fmt"
+	"io"
 	"sync"
 )
 
@@ -23,10 +24,16 @@ func NewBlobStore() *BlobStore {
 }
 
 // PutObject persists the content and returns a URI.
-func (s *BlobStore) PutObject(_ context.Context, path string, _ string, data []byte) (string, error) {
+func (s *BlobStore) PutObject(_ context.Context, path string, _ string, data io.Reader) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.data[path] = append([]byte(nil), data...)
+
+	byteData, err := io.ReadAll(data)
+	if err != nil {
+		return "", fmt.Errorf("failed to read data from reader: %w", err)
+	}
+
+	s.data[path] = append([]byte(nil), byteData...)
 	uri := fmt.Sprintf("memory://%s", path)
 	s.uris[path] = uri
 	return uri, nil

@@ -18,6 +18,7 @@ import (
 
 // Config captures all service configuration knobs loaded via Viper.
 type Config struct {
+	Application  ApplicationConfig                `mapstructure:"application"`
 	Server       ServerConfig                     `mapstructure:"server"`
 	Auth         AuthConfig                       `mapstructure:"auth"`
 	Crawler      CrawlerConfig                    `mapstructure:"crawler"`
@@ -33,6 +34,16 @@ type Config struct {
 	StandardJobs map[string]crawler.JobParameters `mapstructure:"standard_jobs"`
 }
 
+// ApplicationConfig holds metadata about the running application.
+type ApplicationConfig struct {
+	ApplicationName string `mapstructure:"application_name"`
+	ServiceName     string `mapstructure:"service_name"`
+	Version         string `mapstructure:"version"`
+	ProjectID       string `mapstructure:"project_id"`
+	ProjectNumber   string `mapstructure:"project_number"`
+	Region          string `mapstructure:"region"`
+}
+
 // RateLimitConfig controls global and per-domain rate limits.
 type RateLimitConfig struct {
 	Enabled      bool    `mapstructure:"enabled"`
@@ -42,8 +53,9 @@ type RateLimitConfig struct {
 
 // MetricsConfig controls Prometheus metrics exposition.
 type MetricsConfig struct {
-	Enabled bool   `mapstructure:"enabled"`
-	Path    string `mapstructure:"path"`
+	Enabled   bool   `mapstructure:"enabled"`
+	Path      string `mapstructure:"path"`
+	ProjectID string `mapstructure:"project_id"`
 }
 
 // ServerConfig controls HTTP server behavior.
@@ -251,6 +263,12 @@ func Load(path string) (Config, error) {
 }
 
 func setDefaults(v *viper.Viper) {
+	v.SetDefault("application.application_name", "realtime-cpi")
+	v.SetDefault("application.version", "1.0.0")
+	v.SetDefault("application.project_id", "realtime-cpi")
+	v.SetDefault("application.service_name", "real-cpi-crawler-service")
+	v.SetDefault("application.project_number", "582915052207")
+	v.SetDefault("application.region", "us-east4")
 	v.SetDefault("server.port", 8080)
 	v.SetDefault("server.timeout_seconds", 60)
 	v.SetDefault("crawler.concurrency", 4)
@@ -273,6 +291,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("logging.development", true)
 	v.SetDefault("metrics.enabled", true)
 	v.SetDefault("metrics.path", "/metrics")
+	v.SetDefault("metrics.project_id", "realtime-cpi")
 	v.SetDefault("progress.enabled", true)
 	v.SetDefault("progress.buffer_size", 4096)
 	v.SetDefault("progress.batch.max_events", 1000)
@@ -350,6 +369,15 @@ func (c Config) Validate() error {
 		if c.Progress.SinkTimeoutMs <= 0 {
 			return fmt.Errorf("progress.sink_timeout_ms must be > 0")
 		}
+	}
+	if c.Application.ApplicationName == "" {
+		return fmt.Errorf("application.application_name must be set")
+	}
+	if c.Application.Version == "" {
+		c.Application.Version = "1.0.0"
+	}
+	if c.Application.ProjectID == "" {
+		return fmt.Errorf("application.project_id must be set")
 	}
 	return nil
 }

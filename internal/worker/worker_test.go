@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"sync"
 	"testing"
@@ -13,15 +14,19 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
+	"github.com/JakeFAU/realtime-cpi-crawler/internal/config"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/crawler"
-	"github.com/JakeFAU/realtime-cpi-crawler/internal/metrics"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/progress"
+	"github.com/JakeFAU/realtime-cpi-crawler/internal/telemetry"
 )
 
 // TestWorker_ProcessJob_SuccessFlow ensures a happy path job processes successfully.
 func TestWorker_ProcessJob_SuccessFlow(t *testing.T) {
 	t.Parallel()
-	metrics.Init()
+	cfg := config.Config{}
+	if _, _, err := telemetry.InitTelemetry(context.Background(), &cfg); err != nil {
+		t.Fatalf("failed to init telemetry: %v", err)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -109,7 +114,10 @@ func TestWorker_ProcessJob_SuccessFlow(t *testing.T) {
 // TestWorker_ProcessJob_PublishFailureMarksJobFailed verifies publish errors mark jobs failed.
 func TestWorker_ProcessJob_PublishFailureMarksJobFailed(t *testing.T) {
 	t.Parallel()
-	metrics.Init()
+	cfg := config.Config{}
+	if _, _, err := telemetry.InitTelemetry(context.Background(), &cfg); err != nil {
+		t.Fatalf("failed to init telemetry: %v", err)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -176,7 +184,10 @@ func TestWorker_ProcessJob_PublishFailureMarksJobFailed(t *testing.T) {
 // TestWorker_ProcessJob_HeadlessPromotionApplied confirms detector-triggered promotions.
 func TestWorker_ProcessJob_HeadlessPromotionApplied(t *testing.T) {
 	t.Parallel()
-	metrics.Init()
+	cfg := config.Config{}
+	if _, _, err := telemetry.InitTelemetry(context.Background(), &cfg); err != nil {
+		t.Fatalf("failed to init telemetry: %v", err)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -255,7 +266,10 @@ func TestWorker_ProcessJob_HeadlessPromotionApplied(t *testing.T) {
 // TestWorker_ProcessJob_RetrievalStoreFailure ensures errors from the retrieval store fail the job.
 func TestWorker_ProcessJob_RetrievalStoreFailure(t *testing.T) {
 	t.Parallel()
-	metrics.Init()
+	cfg := config.Config{}
+	if _, _, err := telemetry.InitTelemetry(context.Background(), &cfg); err != nil {
+		t.Fatalf("failed to init telemetry: %v", err)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -415,7 +429,10 @@ func (f *fakeJobStore) RecordPage(_ context.Context, page crawler.PageRecord) er
 // TestWorkerBuildBlobPath checks blob path prefix handling.
 func TestWorkerBuildBlobPath(t *testing.T) {
 	t.Parallel()
-	metrics.Init()
+	cfg := config.Config{}
+	if _, _, err := telemetry.InitTelemetry(context.Background(), &cfg); err != nil {
+		t.Fatalf("failed to init telemetry: %v", err)
+	}
 
 	ts := time.Date(2025, time.July, 4, 9, 0, 0, 0, time.UTC)
 	w := New(
@@ -447,7 +464,10 @@ func TestWorkerBuildBlobPath(t *testing.T) {
 // TestWorkerAllowHelpers ensures policy hooks are honored.
 func TestWorkerAllowHelpers(t *testing.T) {
 	t.Parallel()
-	metrics.Init()
+	cfg := config.Config{}
+	if _, _, err := telemetry.InitTelemetry(context.Background(), &cfg); err != nil {
+		t.Fatalf("failed to init telemetry: %v", err)
+	}
 
 	w := New(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, Config{}, zap.NewNop())
 	if !w.allowFetch("job", "url", 0) || !w.allowHeadless("job", "url", 0) {
@@ -519,10 +539,16 @@ func newFakeBlobStore() *fakeBlobStore {
 	return &fakeBlobStore{objects: make(map[string][]byte)}
 }
 
-func (b *fakeBlobStore) PutObject(_ context.Context, path string, _ string, data []byte) (string, error) {
+func (b *fakeBlobStore) PutObject(_ context.Context, path string, _ string, data io.Reader) (string, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.objects[path] = append([]byte(nil), data...)
+
+	byteData, err := io.ReadAll(data)
+	if err != nil {
+		return "", fmt.Errorf("failed to read data from reader: %w", err)
+	}
+
+	b.objects[path] = append([]byte(nil), byteData...)
 	b.lastPath = path
 	b.paths = append(b.paths, path)
 	return "memory://" + path, nil

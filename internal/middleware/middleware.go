@@ -1,9 +1,11 @@
+// Package metrics provides middleware for HTTP metrics.
 package metrics
 
 import (
 	"net/http"
 	"time"
 
+	"github.com/JakeFAU/realtime-cpi-crawler/internal/telemetry"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -19,7 +21,7 @@ func Middleware(next http.Handler) http.Handler {
 			routePattern = "unknown"
 		}
 
-		ObserveHTTPRequest(r.Method, routePattern, ww.status, time.Since(start))
+		telemetry.ObserveHTTPRequest(r.Method, routePattern, ww.status, time.Since(start))
 	})
 }
 

@@ -2,6 +2,7 @@
 package memory
 
 import (
+	"bytes"
 	"context"
 	"testing"
 )
@@ -12,7 +13,7 @@ func TestBlobStorePutObjectCopiesData(t *testing.T) {
 
 	store := NewBlobStore()
 	payload := []byte("content")
-	uri, err := store.PutObject(context.Background(), "path/page.html", "text/html", payload)
+	uri, err := store.PutObject(context.Background(), "path/page.html", "text/html", bytes.NewReader(payload))
 	if err != nil {
 		t.Fatalf("PutObject() error = %v", err)
 	}

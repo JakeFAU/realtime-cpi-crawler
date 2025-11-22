@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/JakeFAU/realtime-cpi-crawler/internal/metrics"
+	"github.com/JakeFAU/realtime-cpi-crawler/internal/telemetry"
 	"golang.org/x/time/rate"
 )
 
@@ -71,7 +71,7 @@ func (l *Limiter) Wait(ctx context.Context, url string) error {
 		// However, if the token was available immediately, duration is 0.
 		duration := time.Since(start)
 		if duration > time.Millisecond {
-			metrics.ObserveRateLimitDelay(domain, duration)
+			telemetry.ObserveRateLimitDelay(domain, duration)
 		}
 	}
 	if err != nil {

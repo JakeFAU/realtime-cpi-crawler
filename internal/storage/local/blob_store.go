@@ -1,9 +1,10 @@
-// Package local provides a BlobStore that stores files on the local filesystem.
+// Package local implements a local filesystem blob store.
 package local
 
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -57,7 +58,7 @@ func New(cfg Config) (*BlobStore, error) {
 }
 
 // PutObject writes data to a file on the local filesystem and returns a file:// URI.
-func (s *BlobStore) PutObject(_ context.Context, path string, _ string, data []byte) (string, error) {
+func (s *BlobStore) PutObject(_ context.Context, path string, _ string, data io.Reader) (string, error) {
 	if strings.TrimSpace(path) == "" {
 		return "", fmt.Errorf("path is required")
 	}
@@ -76,8 +77,14 @@ func (s *BlobStore) PutObject(_ context.Context, path string, _ string, data []b
 		return "", fmt.Errorf("failed to create parent directories: %w", err)
 	}
 
+	// Read data from io.Reader
+	byteData, err := io.ReadAll(data)
+	if err != nil {
+		return "", fmt.Errorf("failed to read data from reader: %w", err)
+	}
+
 	// Write the file.
-	err := os.WriteFile(fullPath, data, 0o600)
+	err = os.WriteFile(fullPath, byteData, 0o600) // Use byteData here
 	if err != nil {
 		return "", fmt.Errorf("failed to write file: %w", err)
 	}

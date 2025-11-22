@@ -20,7 +20,6 @@ import (
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/config"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/crawler"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/dispatcher"
-	"github.com/JakeFAU/realtime-cpi-crawler/internal/metrics"
 	queueMemory "github.com/JakeFAU/realtime-cpi-crawler/internal/queue/memory"
 )
 
@@ -216,7 +215,6 @@ func TestServer_GetJobResult_ListPagesError(t *testing.T) {
 // TestServer_MetricsEndpointExportsRegistry validates /metrics exposes Prometheus data.
 func TestServer_MetricsEndpointExportsRegistry(t *testing.T) {
 	t.Parallel()
-	metrics.Init()
 
 	server := newTestServer()
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)

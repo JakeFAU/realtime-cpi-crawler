@@ -5,11 +5,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JakeFAU/realtime-cpi-crawler/internal/metrics"
+	"github.com/JakeFAU/realtime-cpi-crawler/internal/config"
+	"github.com/JakeFAU/realtime-cpi-crawler/internal/telemetry"
 )
 
 func TestLimiter_Wait(t *testing.T) {
-	metrics.Init()
+	cfg := config.Config{}
+	if _, _, err := telemetry.InitTelemetry(context.Background(), &cfg); err != nil {
+		t.Fatalf("failed to init telemetry: %v", err)
+	}
 	// Create a limiter with 1 RPS and burst 1
 	l := New(Config{
 		DefaultRPS:   10,
@@ -57,7 +61,11 @@ func TestLimiter_Wait(t *testing.T) {
 }
 
 func TestLimiter_DifferentDomains(t *testing.T) {
-	metrics.Init()
+	cfg := config.Config{}
+	if _, _, err := telemetry.InitTelemetry(context.Background(), &cfg); err != nil {
+		t.Fatalf("failed to init telemetry: %v", err)
+	}
+	// Create a limiter with 1 RPS and burst 1
 	l := New(Config{
 		DefaultRPS:   1, // 1 RPS = 1s interval
 		DefaultBurst: 1,
