@@ -22,8 +22,9 @@ type Config struct {
 
 // Fetcher implements crawler.Fetcher using the Colly collector.
 type Fetcher struct {
-	cfg       Config
-	transport http.RoundTripper
+	cfg           Config
+	transport     http.RoundTripper
+	baseCollector *colly.Collector
 }
 
 type collectorHooks interface {
@@ -34,9 +35,20 @@ type collectorHooks interface {
 
 // New builds a Fetcher.
 func New(cfg Config) *Fetcher {
+	c := colly.NewCollector(colly.Async(false))
+
+	// Create a base transport with connection pooling
+	baseTransport := newHTTPTransport()
+
+	// Wrap with robots cache
+	transport := NewRobotsCacheTransport(baseTransport)
+
+	c.WithTransport(transport)
+
 	return &Fetcher{
-		cfg:       cfg,
-		transport: newHTTPTransport(),
+		cfg:           cfg,
+		transport:     transport,
+		baseCollector: c,
 	}
 }
 
@@ -64,7 +76,7 @@ func (f *Fetcher) buildCollector(
 	result *crawler.FetchResponse,
 	fetchErr *error,
 ) (*colly.Collector, *robotsProbeState) {
-	collector := colly.NewCollector(colly.Async(false))
+	collector := f.baseCollector.Clone()
 	if f.cfg.UserAgent != "" {
 		collector.UserAgent = f.cfg.UserAgent
 	}

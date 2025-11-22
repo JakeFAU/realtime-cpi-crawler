@@ -116,6 +116,7 @@ linters:
             - github.com/prometheus/client_golang/prometheus
             - github.com/jackc/pgx/v5
             - github.com/pashagolub/pgxmock/v4
+            - go.opentelemetry.io/
           # Deny specific problematic packages
           deny:
             - pkg: "math/rand$"

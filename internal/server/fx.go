@@ -23,6 +23,8 @@ import (
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/headless/detector"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/id/uuid"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/logging"
+	"github.com/JakeFAU/realtime-cpi-crawler/internal/policy/ratelimit"
+	"github.com/JakeFAU/realtime-cpi-crawler/internal/policy/simple"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/progress"
 	progresssinks "github.com/JakeFAU/realtime-cpi-crawler/internal/progress/sinks"
 	memorypublisher "github.com/JakeFAU/realtime-cpi-crawler/internal/publisher/memory"
@@ -33,6 +35,7 @@ import (
 	memoryStorage "github.com/JakeFAU/realtime-cpi-crawler/internal/storage/memory"
 	pgstore "github.com/JakeFAU/realtime-cpi-crawler/internal/storage/postgres"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/store"
+	"github.com/JakeFAU/realtime-cpi-crawler/internal/telemetry"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/worker"
 	"go.uber.org/zap"
 )
@@ -50,6 +53,7 @@ type App struct {
 	storage        *storage.Client
 	retrievalStore crawler.RetrievalStore
 	progressRepo   store.ProgressRepository
+	tracerShutdown func(context.Context) error
 }
 
 // NewApp creates a new App with the given configuration.
@@ -143,6 +147,11 @@ func (a *App) Close(ctx context.Context) error {
 	if err := a.logger.Sync(); err != nil {
 		a.logger.Warn("logger sync failed", zap.Error(err))
 	}
+	if a.tracerShutdown != nil {
+		if err := a.tracerShutdown(ctx); err != nil {
+			a.logger.Warn("tracer shutdown failed", zap.Error(err))
+		}
+	}
 	a.logger.Info("shutdown complete")
 	return nil
 }
@@ -159,6 +168,19 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("app init failed: %w", err)
 	}
+
+	// Initialize tracing
+	tp, err := telemetry.InitTracerProvider(ctx, "webcrawler")
+	if err != nil {
+		// Log error but don't fail? Or fail?
+		// Plan says "Implement Tracing".
+		// Let's log and continue or fail.
+		// Ideally fail if observability is critical.
+		// But for now, let's just log warning if it fails, or fail.
+		// Let's fail to be safe.
+		return nil, fmt.Errorf("tracer init failed: %w", err)
+	}
+	app.tracerShutdown = tp.Shutdown
 
 	app.logger.Info("building application dependencies")
 	jobStore := memoryStorage.NewJobStore()
@@ -354,15 +376,34 @@ func setupDispatcher(
 	}
 
 	workerCfg := worker.Config{
-		ContentType: app.cfg.Storage.ContentType,
-		BlobPrefix:  app.cfg.Storage.Prefix,
-		Topic:       app.cfg.PubSub.TopicName,
+		ContentType:    app.cfg.Storage.ContentType,
+		BlobPrefix:     app.cfg.Storage.Prefix,
+		Topic:          app.cfg.PubSub.TopicName,
+		JobTimeout:     app.cfg.JobBudget(),
+		RequestTimeout: time.Duration(app.cfg.HTTP.TimeoutSeconds) * time.Second,
 	}
 	app.logger.Info("worker config",
 		zap.String("content_type", workerCfg.ContentType),
 		zap.String("blob_prefix", workerCfg.BlobPrefix),
 		zap.String("topic", workerCfg.Topic),
+		zap.Duration("job_timeout", workerCfg.JobTimeout),
+		zap.Duration("request_timeout", workerCfg.RequestTimeout),
 	)
+
+	var policy crawler.Policy
+	if app.cfg.RateLimit.Enabled {
+		policy = ratelimit.New(ratelimit.Config{
+			DefaultRPS:   app.cfg.RateLimit.DefaultRPS,
+			DefaultBurst: app.cfg.RateLimit.DefaultBurst,
+		})
+		app.logger.Info("rate limiter enabled",
+			zap.Float64("default_rps", app.cfg.RateLimit.DefaultRPS),
+			zap.Int("default_burst", app.cfg.RateLimit.DefaultBurst),
+		)
+	} else {
+		policy = simple.New()
+		app.logger.Info("rate limiter disabled, using simple policy")
+	}
 
 	var workers []*worker.Worker
 	for i := 0; i < app.cfg.Crawler.Concurrency; i++ {
@@ -377,7 +418,7 @@ func setupDispatcher(
 			probeFetcher,
 			headless,
 			detect,
-			nil,
+			policy,
 			idGen,
 			progressEmitter,
 			workerCfg,

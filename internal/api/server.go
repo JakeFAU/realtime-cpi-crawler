@@ -59,7 +59,13 @@ func NewServer(
 	r.Use(metrics.Middleware)
 	r.Use(s.loggingMiddleware)
 	r.Use(s.recoverMiddleware)
-	r.Use(timeoutMiddleware(60 * time.Second))
+	r.Use(s.recoverMiddleware)
+	// Use configured timeout or default to 60s
+	timeout := 60 * time.Second
+	if cfg.Server.TimeoutSeconds > 0 {
+		timeout = time.Duration(cfg.Server.TimeoutSeconds) * time.Second
+	}
+	r.Use(timeoutMiddleware(timeout))
 	if cfg.Auth.Enabled {
 		r.Use(apiKeyMiddleware(cfg.Auth.APIKey))
 	}

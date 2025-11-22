@@ -4,6 +4,7 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -18,6 +19,9 @@ import (
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/id/uuid"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/metrics"
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/progress"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Config controls Worker behavior.
@@ -25,6 +29,16 @@ type Config struct {
 	ContentType string
 	BlobPrefix  string
 	Topic       string
+	JobTimeout  time.Duration
+	// RequestTimeout bounds a single fetch (probe or headless). Headless fetches
+	// may still stop earlier via their own navigation timeout, but will never
+	// exceed this cap.
+	// RequestTimeout bounds a single fetch (probe or headless). Headless fetches
+	// may still stop earlier via their own navigation timeout, but will never
+	// exceed this cap.
+	RequestTimeout   time.Duration
+	MaxRetries       int
+	RetryBackoffBase time.Duration
 }
 
 // Worker consumes queue items and executes the fetch pipeline.
@@ -69,6 +83,18 @@ func New(
 	if cfg.ContentType == "" {
 		cfg.ContentType = "text/html; charset=utf-8"
 	}
+	if cfg.RequestTimeout <= 0 {
+		cfg.RequestTimeout = 15 * time.Second
+	}
+	if cfg.JobTimeout <= 0 {
+		cfg.JobTimeout = cfg.RequestTimeout
+	}
+	if cfg.MaxRetries <= 0 {
+		cfg.MaxRetries = 3
+	}
+	if cfg.RetryBackoffBase <= 0 {
+		cfg.RetryBackoffBase = 1 * time.Second
+	}
 	if idGen == nil {
 		idGen = uuid.NewUUIDGenerator()
 	}
@@ -108,6 +134,18 @@ func (w *Worker) Run(ctx context.Context) {
 }
 
 func (w *Worker) processJob(ctx context.Context, item crawler.QueueItem) {
+	tracer := otel.Tracer("worker")
+	ctx, span := tracer.Start(ctx, "process_job", trace.WithAttributes(
+		attribute.String("job_id", item.JobID),
+	))
+	defer span.End()
+
+	metrics.IncActiveWorkers()
+	defer metrics.DecActiveWorkers()
+
+	jobCtx, cancel := w.jobContext(ctx, item.Params)
+	defer cancel()
+
 	start := w.now()
 	item.JobStartedAt = start
 	jobUUID, hasUUID := w.parseJobUUID(item.JobID)
@@ -119,13 +157,7 @@ func (w *Worker) processJob(ctx context.Context, item crawler.QueueItem) {
 	if w.probeFetcher == nil {
 		w.logger.Error("no probe fetcher configured", zap.String("job_id", item.JobID))
 		failMsg := "no probe fetcher configured"
-		if err := w.jobStore.UpdateJobStatus(
-			ctx,
-			item.JobID,
-			crawler.JobStatusFailed,
-			failMsg,
-			crawler.JobCounters{},
-		); err != nil {
+		if err := w.updateJobStatus(ctx, item.JobID, crawler.JobStatusFailed, failMsg, crawler.JobCounters{}); err != nil {
 			w.logger.Error("fail job status update", zap.String("job_id", item.JobID), zap.Error(err))
 		}
 		if hasUUID {
@@ -137,22 +169,32 @@ func (w *Worker) processJob(ctx context.Context, item crawler.QueueItem) {
 	status := crawler.JobStatusRunning
 	errText := ""
 
-	if err := w.jobStore.UpdateJobStatus(ctx, item.JobID, status, errText, counters); err != nil {
+	if err := w.updateJobStatus(ctx, item.JobID, status, errText, counters); err != nil {
 		w.logger.Error("update job status failed", zap.String("job_id", item.JobID), zap.Error(err))
 		return
 	}
 
 	for _, targetURL := range item.Params.URLs {
-		if err := w.handleURL(ctx, item, jobUUID, hasUUID, targetURL, &counters); err != nil {
+		if jobCtx.Err() != nil {
+			errText = jobCtx.Err().Error()
+			w.logger.Warn("job context canceled before URL fetch",
+				zap.String("job_id", item.JobID),
+				zap.String("url", targetURL),
+				zap.Error(jobCtx.Err()),
+			)
+			break
+		}
+		if err := w.handleURL(jobCtx, item, jobUUID, hasUUID, targetURL, &counters); err != nil {
 			errText = err.Error()
 		}
 	}
 
-	status, errText = w.deriveFinalStatus(ctx, counters, errText)
+	status, errText = w.deriveFinalStatus(jobCtx, counters, errText)
 
-	if err := w.jobStore.UpdateJobStatus(ctx, item.JobID, status, errText, counters); err != nil {
+	if err := w.updateJobStatus(ctx, item.JobID, status, errText, counters); err != nil {
 		w.logger.Error("final job status update failed", zap.String("job_id", item.JobID), zap.Error(err))
 	}
+	metrics.ObserveJob(string(status))
 	if hasUUID {
 		w.emitJobCompletion(jobUUID, status, start, errText)
 	}
@@ -193,16 +235,52 @@ func (w *Worker) handleURL(
 	targetURL string,
 	counters *crawler.JobCounters,
 ) error {
+	normalizedURL, err := crawler.NormalizeURL(targetURL)
+	if err != nil {
+		w.logger.Warn("failed to normalize url",
+			zap.String("job_id", item.JobID),
+			zap.String("url", targetURL),
+			zap.Error(err),
+		)
+	} else {
+		targetURL = normalizedURL
+	}
+
+	tracer := otel.Tracer("worker")
+	ctx, span := tracer.Start(ctx, "handle_url", trace.WithAttributes(
+		attribute.String("job_id", item.JobID),
+		attribute.String("url", targetURL),
+	))
+	defer span.End()
+
 	if !w.allowFetch(item.JobID, targetURL, 0) {
 		w.logger.Warn("fetch blocked by policy", zap.String("job_id", item.JobID), zap.String("url", targetURL))
 		return nil
 	}
 
-	resp, err := w.fetchProbe(ctx, item, targetURL)
-	if err != nil {
+	if w.policy != nil {
+		if err := w.policy.Wait(ctx, targetURL); err != nil {
+			w.logger.Warn("rate limiter wait failed",
+				zap.String("job_id", item.JobID),
+				zap.String("url", targetURL),
+				zap.Error(err),
+			)
+			return fmt.Errorf("rate limiter wait: %w", err)
+		}
+	}
+
+	var resp crawler.FetchResponse
+	var fetchErr error
+
+	resp, fetchErr = w.fetchProbeWithRetry(ctx, item, targetURL)
+	if fetchErr != nil {
 		counters.PagesFailed++
-		w.logger.Error("probe fetch failed", zap.String("job_id", item.JobID), zap.String("url", targetURL), zap.Error(err))
-		return err
+		w.logger.Error("probe fetch failed after retries",
+			zap.String("job_id", item.JobID),
+			zap.String("url", targetURL),
+			zap.Error(fetchErr),
+		)
+		return fetchErr
 	}
 	w.logger.Debug("probe fetch succeeded", zap.String("job_id", item.JobID), zap.String("url", targetURL))
 
@@ -214,7 +292,11 @@ func (w *Worker) handleURL(
 
 	if err := w.persistAndPublish(ctx, item.JobID, item.JobStartedAt, targetURL, finalResp); err != nil {
 		counters.PagesFailed++
-		w.logger.Error("persist page failed", zap.String("job_id", item.JobID), zap.String("url", targetURL), zap.Error(err))
+		w.logger.Error("persist page failed",
+			zap.String("job_id", item.JobID),
+			zap.String("url", targetURL),
+			zap.Error(err),
+		)
 		w.recordPage(targetURL, false, len(finalResp.Body))
 		return err
 	}
@@ -228,8 +310,43 @@ func (w *Worker) handleURL(
 	return nil
 }
 
+func (w *Worker) fetchProbeWithRetry(
+	ctx context.Context,
+	item crawler.QueueItem,
+	targetURL string,
+) (crawler.FetchResponse, error) {
+	var resp crawler.FetchResponse
+	var err error
+
+	for attempt := 0; attempt <= w.cfg.MaxRetries; attempt++ {
+		if attempt > 0 {
+			w.logger.Info("retrying fetch",
+				zap.String("job_id", item.JobID),
+				zap.String("url", targetURL),
+				zap.Int("attempt", attempt),
+			)
+			select {
+			case <-ctx.Done():
+				return crawler.FetchResponse{}, fmt.Errorf("context done: %w", ctx.Err())
+			case <-time.After(w.cfg.RetryBackoffBase * time.Duration(attempt)):
+				// Exponential backoff-ish
+			}
+		}
+
+		resp, err = w.fetchProbe(ctx, item, targetURL)
+		if err == nil {
+			return resp, nil
+		}
+		// If error is context canceled, don't retry
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return crawler.FetchResponse{}, err
+		}
+	}
+	return crawler.FetchResponse{}, err
+}
+
 func (w *Worker) fetchProbe(ctx context.Context, item crawler.QueueItem, url string) (crawler.FetchResponse, error) {
-	pageCtx, cancel := context.WithCancel(ctx)
+	pageCtx, cancel := w.pageContext(ctx)
 	defer cancel()
 
 	resp, err := w.probeFetcher.Fetch(pageCtx, crawler.FetchRequest{
@@ -268,7 +385,7 @@ func (w *Worker) maybePromote(
 		return resp, false
 	}
 
-	headlessCtx, cancel := context.WithCancel(ctx)
+	headlessCtx, cancel := w.pageContext(ctx)
 	defer cancel()
 
 	headlessResp, err := w.headlessFetcher.Fetch(headlessCtx, crawler.FetchRequest{
@@ -616,4 +733,54 @@ func (w *Worker) recordPage(url string, success bool, bytes int) {
 		statusStr = "error"
 	}
 	metrics.ObserveCrawl(url, statusStr, bytes)
+}
+
+func (w *Worker) jobContext(
+	parent context.Context,
+	params crawler.JobParameters,
+) (context.Context, context.CancelFunc) {
+	if parent == nil {
+		parent = context.Background()
+	}
+	budget := time.Duration(params.BudgetSeconds) * time.Second
+	if budget <= 0 {
+		budget = w.cfg.JobTimeout
+	}
+	if budget > 0 {
+		return context.WithTimeout(parent, budget)
+	}
+	return context.WithCancel(parent)
+}
+
+func (w *Worker) pageContext(parent context.Context) (context.Context, context.CancelFunc) {
+	if parent == nil {
+		parent = context.Background()
+	}
+	if w.cfg.RequestTimeout > 0 {
+		return context.WithTimeout(parent, w.cfg.RequestTimeout)
+	}
+	return context.WithCancel(parent)
+}
+
+func (w *Worker) updateJobStatus(
+	ctx context.Context,
+	jobID string,
+	status crawler.JobStatus,
+	errText string,
+	counters crawler.JobCounters,
+) error {
+	if w.jobStore == nil {
+		return fmt.Errorf("job store is not configured")
+	}
+	updateCtx, cancel := w.statusContext(ctx)
+	defer cancel()
+	if err := w.jobStore.UpdateJobStatus(updateCtx, jobID, status, errText, counters); err != nil {
+		return fmt.Errorf("update job status: %w", err)
+	}
+	return nil
+}
+
+func (w *Worker) statusContext(_ context.Context) (context.Context, context.CancelFunc) {
+	const statusUpdateTimeout = 5 * time.Second
+	return context.WithTimeout(context.Background(), statusUpdateTimeout)
 }
