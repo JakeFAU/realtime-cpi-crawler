@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/crawler"
@@ -148,4 +149,85 @@ func isTransientTLSError(err error) bool {
 		return true
 	}
 	return strings.Contains(err.Error(), "tls: handshake timeout")
+}
+
+// RobotsCacheTransport caches robots.txt responses to avoid redundant fetches.
+type RobotsCacheTransport struct {
+	base  http.RoundTripper
+	cache *sync.Map // map[string]*http.Response (or []byte)
+}
+
+// NewRobotsCacheTransport creates a new RobotsCacheTransport.
+func NewRobotsCacheTransport(base http.RoundTripper) *RobotsCacheTransport {
+	return &RobotsCacheTransport{
+		base:  base,
+		cache: &sync.Map{},
+	}
+}
+
+// RoundTrip executes a single HTTP transaction, returning a Response for the provided Request.
+func (t *RobotsCacheTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if !isRobotsTxtRequest(req) {
+		resp, err := t.base.RoundTrip(req)
+		if err != nil {
+			return nil, fmt.Errorf("base roundtrip: %w", err)
+		}
+		return resp, nil
+	}
+
+	key := req.URL.String()
+	if val, ok := t.cache.Load(key); ok {
+		// Return cached response. We need to clone it because the body is read.
+		// Actually, we need to store the body bytes and reconstruct the response.
+		cached, ok := val.(*cachedResponse)
+		if !ok {
+			// Should not happen, but handle it
+			t.cache.Delete(key)
+		} else {
+			return cached.toResponse(req), nil
+		}
+	}
+
+	resp, err := t.base.RoundTrip(req)
+	if err != nil {
+		return nil, fmt.Errorf("base roundtrip: %w", err)
+	}
+
+	if resp.StatusCode == http.StatusOK {
+		// Cache the response
+		bodyBytes, err := io.ReadAll(resp.Body)
+		_ = resp.Body.Close() //nolint:errcheck // We read it all, close it. Ignore error as we are replacing body.
+		if err != nil {
+			return nil, fmt.Errorf("read body: %w", err)
+		}
+		// Reconstruct body for the caller
+		resp.Body = io.NopCloser(strings.NewReader(string(bodyBytes)))
+
+		cached := &cachedResponse{
+			StatusCode: resp.StatusCode,
+			Status:     resp.Status,
+			Body:       bodyBytes,
+			Header:     resp.Header,
+		}
+		t.cache.Store(key, cached)
+	}
+	return resp, nil
+}
+
+type cachedResponse struct {
+	StatusCode int
+	Status     string
+	Body       []byte
+	Header     http.Header
+}
+
+func (c *cachedResponse) toResponse(req *http.Request) *http.Response {
+	return &http.Response{
+		StatusCode:    c.StatusCode,
+		Status:        c.Status,
+		Body:          io.NopCloser(strings.NewReader(string(c.Body))),
+		ContentLength: int64(len(c.Body)),
+		Header:        c.Header.Clone(),
+		Request:       req,
+	}
 }

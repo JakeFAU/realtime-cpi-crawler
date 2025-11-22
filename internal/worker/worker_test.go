@@ -476,6 +476,12 @@ func (f fakePolicy) AllowFetch(string, string, int) bool {
 	return f.allowFetch
 }
 
+func (f fakePolicy) ReportResult(string, string, int, time.Duration) {}
+
+func (f fakePolicy) Wait(context.Context, string) error {
+	return nil
+}
+
 func (f *fakeJobStore) GetJob(context.Context, string) (crawler.Job, error) {
 	return crawler.Job{}, nil
 }

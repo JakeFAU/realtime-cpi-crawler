@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -28,7 +29,15 @@ type Config struct {
 	Logging      LoggingConfig                    `mapstructure:"logging"`
 	Metrics      MetricsConfig                    `mapstructure:"metrics"`
 	Progress     ProgressConfig                   `mapstructure:"progress"`
+	RateLimit    RateLimitConfig                  `mapstructure:"rate_limit"`
 	StandardJobs map[string]crawler.JobParameters `mapstructure:"standard_jobs"`
+}
+
+// RateLimitConfig controls global and per-domain rate limits.
+type RateLimitConfig struct {
+	Enabled      bool    `mapstructure:"enabled"`
+	DefaultRPS   float64 `mapstructure:"default_rps"`
+	DefaultBurst int     `mapstructure:"default_burst"`
 }
 
 // MetricsConfig controls Prometheus metrics exposition.
@@ -39,7 +48,8 @@ type MetricsConfig struct {
 
 // ServerConfig controls HTTP server behavior.
 type ServerConfig struct {
-	Port int `mapstructure:"port"`
+	Port           int `mapstructure:"port"`
+	TimeoutSeconds int `mapstructure:"timeout_seconds"`
 }
 
 // AuthConfig defines API authentication toggles.
@@ -220,6 +230,15 @@ func Load(path string) (Config, error) {
 		return Config{}, fmt.Errorf("unmarshal config: %w", err)
 	}
 
+	// Cloud Run sets PORT; allow it to override the server port unless explicitly set via config/env.
+	if portEnv := strings.TrimSpace(os.Getenv("PORT")); portEnv != "" {
+		port, err := strconv.Atoi(portEnv)
+		if err != nil || port <= 0 {
+			return Config{}, fmt.Errorf("parse PORT env var: %w", err)
+		}
+		cfg.Server.Port = port
+	}
+
 	if err := cfg.Database.resolveDSN(); err != nil {
 		return Config{}, err
 	}
@@ -233,6 +252,7 @@ func Load(path string) (Config, error) {
 
 func setDefaults(v *viper.Viper) {
 	v.SetDefault("server.port", 8080)
+	v.SetDefault("server.timeout_seconds", 60)
 	v.SetDefault("crawler.concurrency", 4)
 	v.SetDefault("crawler.user_agent", "real-cpi-bot/0.1")
 	v.SetDefault("crawler.ignore_robots", false)
@@ -259,6 +279,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("progress.batch.max_wait_ms", 500)
 	v.SetDefault("progress.sink_timeout_ms", 10000)
 	v.SetDefault("progress.log_enabled", false)
+	v.SetDefault("rate_limit.enabled", true)
+	v.SetDefault("rate_limit.default_rps", 1.0)
+	v.SetDefault("rate_limit.default_burst", 1)
 }
 
 // Validate enforces required values and reasonable limits.

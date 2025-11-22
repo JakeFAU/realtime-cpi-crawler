@@ -51,6 +51,10 @@ type Queue interface {
 type Policy interface {
 	AllowHeadless(jobID string, url string, depth int) bool
 	AllowFetch(jobID string, url string, depth int) bool
+	// ReportResult provides feedback to the policy (e.g. for rate limiter adjustments).
+	ReportResult(jobID string, url string, statusCode int, duration time.Duration)
+	// Wait blocks until the request is allowed to proceed.
+	Wait(ctx context.Context, url string) error
 }
 
 // Hasher computes digests for deduplication/integrity.

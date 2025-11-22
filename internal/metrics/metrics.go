@@ -20,6 +20,9 @@ var (
 	httpRequestsTotal                    *prometheus.CounterVec
 	httpRequestDurationSeconds           *prometheus.HistogramVec
 	crawlerProbeTLSHandshakeTimeoutTotal prometheus.Counter
+	crawlerJobsTotal                     *prometheus.CounterVec
+	crawlerActiveWorkers                 prometheus.Gauge
+	crawlerRateLimitDelaysSeconds        *prometheus.HistogramVec
 
 	once sync.Once
 )
@@ -67,6 +70,30 @@ func Init() {
 				Help: "Total TLS handshake timeouts encountered while probing robots.txt.",
 			},
 		)
+
+		crawlerJobsTotal = promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "crawler_jobs_total",
+				Help: "Total number of jobs processed, labeled by status.",
+			},
+			[]string{"status"},
+		)
+
+		crawlerActiveWorkers = promauto.NewGauge(
+			prometheus.GaugeOpts{
+				Name: "crawler_active_workers",
+				Help: "Number of workers currently processing a job.",
+			},
+		)
+
+		crawlerRateLimitDelaysSeconds = promauto.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    "crawler_rate_limit_delays_seconds",
+				Help:    "Histogram of rate limit wait durations.",
+				Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 30},
+			},
+			[]string{"domain"},
+		)
 	})
 }
 
@@ -106,4 +133,24 @@ func ObserveHTTPRequest(method, route string, code int, duration time.Duration) 
 // ObserveProbeTLSHandshakeTimeout increments the probe-specific handshake timeout counter.
 func ObserveProbeTLSHandshakeTimeout() {
 	crawlerProbeTLSHandshakeTimeoutTotal.Inc()
+}
+
+// ObserveJob increments the job counter for the given status.
+func ObserveJob(status string) {
+	crawlerJobsTotal.WithLabelValues(status).Inc()
+}
+
+// IncActiveWorkers increments the active workers gauge.
+func IncActiveWorkers() {
+	crawlerActiveWorkers.Inc()
+}
+
+// DecActiveWorkers decrements the active workers gauge.
+func DecActiveWorkers() {
+	crawlerActiveWorkers.Dec()
+}
+
+// ObserveRateLimitDelay records the duration of a rate limit wait.
+func ObserveRateLimitDelay(domain string, duration time.Duration) {
+	crawlerRateLimitDelaysSeconds.WithLabelValues(domain).Observe(duration.Seconds())
 }
