@@ -209,7 +209,9 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	}
 
 	// Initialize tracing
-	if err := setupTelemetry(ctx, app); err != nil {
+
+	if err = setupTelemetry(ctx, app); err != nil {
+
 		return nil, err
 	}
 
