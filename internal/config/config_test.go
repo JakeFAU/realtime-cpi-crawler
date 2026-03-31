@@ -43,7 +43,7 @@ storage:
   prefix: logs
   content_type: text/plain
 database:
-  dsn: postgres://user:dummy_password_for_test@127.0.0.1/db
+  dsn: postgres://user:faketoken123@127.0.0.1/db
   retrieval_table: crawler
   progress_table: job_runs
   stats_table: stats
@@ -226,7 +226,7 @@ func TestConfigValidateErrors(t *testing.T) {
 			name: "database missing table",
 			cfg: func() Config {
 				c := base
-		c.Database.DSN = "postgres://user:dummy_password_for_test@localhost/db"
+				c.Database.DSN = "postgres://user:faketoken123@localhost/db"
 				c.Database.RetrievalTable = ""
 				return c
 			}(),
@@ -262,14 +262,14 @@ func TestDatabaseResolveDSNFromComponents(t *testing.T) {
 		Host:     "10.1.1.5",
 		Port:     6432,
 		User:     "crawler",
-		Password: "dummy_password_for_test",
+		Password: "faketoken123",
 		Name:     "realtime",
 		SSLMode:  "require",
 	}
 	if err := cfg.resolveDSN(); err != nil {
 		t.Fatalf("resolveDSN() error = %v", err)
 	}
-	want := "postgres://crawler:dummy_password_for_test@10.1.1.5:6432/realtime?sslmode=require"
+	want := "postgres://crawler:faketoken123@10.1.1.5:6432/realtime?sslmode=require"
 	if cfg.DSN != want {
 		t.Fatalf("unexpected DSN built: got %q want %q", cfg.DSN, want)
 	}
