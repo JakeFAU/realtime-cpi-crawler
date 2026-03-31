@@ -43,7 +43,14 @@ func TestServer_SubmitCustomJob_Succeeds(t *testing.T) {
 		Logging: config.LoggingConfig{Development: true},
 		Metrics: config.MetricsConfig{Enabled: true, Path: "/metrics"},
 	}
-	server := NewServer(jobStore, dispatch, idGen, clock, cfg, zap.NewNop(), nil)
+	server := NewServer(ServerDeps{
+		JobStore:   jobStore,
+		Dispatcher: dispatch,
+		IDGen:      idGen,
+		Clock:      clock,
+		Config:     cfg,
+		Logger:     zap.NewNop(),
+	})
 
 	reqBody := []byte(`{"urls":["https://example.com"]}`)
 	req := httptest.NewRequest(http.MethodPost, "/v1/jobs/custom", bytes.NewReader(reqBody))
@@ -176,15 +183,14 @@ func TestServer_SubmitStandardJob_Succeeds(t *testing.T) {
 			},
 		},
 	}
-	server := NewServer(
-		jobStore,
-		dispatch,
-		&fakeIDGen{ids: []string{"std-job"}},
-		&fakeClock{now: time.Unix(50, 0)},
-		cfg,
-		zap.NewNop(),
-		nil,
-	)
+	server := NewServer(ServerDeps{
+		JobStore:   jobStore,
+		Dispatcher: dispatch,
+		IDGen:      &fakeIDGen{ids: []string{"std-job"}},
+		Clock:      &fakeClock{now: time.Unix(50, 0)},
+		Config:     cfg,
+		Logger:     zap.NewNop(),
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/jobs/standard", bytes.NewBufferString(`{"name":"price-refresh"}`))
 	rec := httptest.NewRecorder()
@@ -252,15 +258,14 @@ func TestServer_APIKeyMiddleware(t *testing.T) {
 			APIKey:  "secret",
 		},
 	}
-	server := NewServer(
-		jobStore,
-		dispatch,
-		&fakeIDGen{},
-		&fakeClock{now: time.Unix(100, 0)},
-		cfg,
-		zap.NewNop(),
-		nil,
-	)
+	server := NewServer(ServerDeps{
+		JobStore:   jobStore,
+		Dispatcher: dispatch,
+		IDGen:      &fakeIDGen{},
+		Clock:      &fakeClock{now: time.Unix(100, 0)},
+		Config:     cfg,
+		Logger:     zap.NewNop(),
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
@@ -448,13 +453,12 @@ func newTestServerWithStore(jobStore crawler.JobStore) *Server {
 			},
 		},
 	}
-	return NewServer(
-		jobStore,
-		dispatch,
-		&fakeIDGen{},
-		&fakeClock{now: time.Unix(100, 0)},
-		cfg,
-		zap.NewNop(),
-		nil,
-	)
+	return NewServer(ServerDeps{
+		JobStore:   jobStore,
+		Dispatcher: dispatch,
+		IDGen:      &fakeIDGen{},
+		Clock:      &fakeClock{now: time.Unix(100, 0)},
+		Config:     cfg,
+		Logger:     zap.NewNop(),
+	})
 }

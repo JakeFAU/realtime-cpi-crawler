@@ -222,15 +222,15 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		return nil, err
 	}
 
-	app.apiServer = api.NewServer(
-		jobStore,
-		app.dispatch,
-		uuid.NewUUIDGenerator(),
-		system.New(),
-		*cfg,
-		logger.Named("api"),
-		app.progressRepo,
-	)
+	app.apiServer = api.NewServer(api.ServerDeps{
+		JobStore:     jobStore,
+		Dispatcher:   app.dispatch,
+		IDGen:        uuid.NewUUIDGenerator(),
+		Clock:        system.New(),
+		Config:       *cfg,
+		Logger:       logger.Named("api"),
+		ProgressRepo: app.progressRepo,
+	})
 
 	return app, nil
 }

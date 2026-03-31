@@ -44,30 +44,33 @@ func (s *Server) loggerFromContext(ctx context.Context) *zap.Logger {
 	return s.logger
 }
 
+// ServerDeps groups the dependencies for the Server.
+type ServerDeps struct {
+	JobStore     crawler.JobStore
+	Dispatcher   *dispatcher.Dispatcher
+	IDGen        crawler.IDGenerator
+	Clock        crawler.Clock
+	Config       config.Config
+	Logger       *zap.Logger
+	ProgressRepo store.ProgressRepository
+}
+
 // NewServer constructs a Server with middleware and routes.
-func NewServer(
-	jobStore crawler.JobStore,
-	dispatcher *dispatcher.Dispatcher,
-	idGen crawler.IDGenerator,
-	clock crawler.Clock,
-	cfg config.Config,
-	logger *zap.Logger,
-	progressRepo store.ProgressRepository,
-) *Server {
+func NewServer(deps ServerDeps) *Server {
 	if _, _, err := telemetry.InitTelemetry(
 		context.Background(),
-		&cfg,
+		&deps.Config,
 	); err != nil {
-		logger.Error("failed to initialize telemetry", zap.Error(err))
+		deps.Logger.Error("failed to initialize telemetry", zap.Error(err))
 	}
 	s := &Server{
-		jobStore:   jobStore,
-		dispatcher: dispatcher,
-		idGen:      idGen,
-		clock:      clock,
-		cfg:        cfg,
-		logger:     logger,
-		progress:   NewProgressHandler(progressRepo, logger.Named("progress_api")),
+		jobStore:   deps.JobStore,
+		dispatcher: deps.Dispatcher,
+		idGen:      deps.IDGen,
+		clock:      deps.Clock,
+		cfg:        deps.Config,
+		logger:     deps.Logger,
+		progress:   NewProgressHandler(deps.ProgressRepo, deps.Logger.Named("progress_api")),
 	}
 	r := chi.NewRouter()
 	r.Use(requestIDMiddleware)
@@ -76,18 +79,18 @@ func NewServer(
 	r.Use(s.recoverMiddleware)
 	// Use configured timeout or default to 60s
 	timeout := 60 * time.Second
-	if cfg.Server.TimeoutSeconds > 0 {
-		timeout = time.Duration(cfg.Server.TimeoutSeconds) * time.Second
+	if deps.Config.Server.TimeoutSeconds > 0 {
+		timeout = time.Duration(deps.Config.Server.TimeoutSeconds) * time.Second
 	}
 	r.Use(timeoutMiddleware(timeout))
-	if cfg.Auth.Enabled {
-		r.Use(apiKeyMiddleware(cfg.Auth.APIKey))
+	if deps.Config.Auth.Enabled {
+		r.Use(apiKeyMiddleware(deps.Config.Auth.APIKey))
 	}
 
 	r.Get("/healthz", s.healthz)
 	r.Get("/readyz", s.readyz)
-	if cfg.Metrics.Enabled {
-		r.Handle(cfg.Metrics.Path, telemetry.Handler())
+	if deps.Config.Metrics.Enabled {
+		r.Handle(deps.Config.Metrics.Path, telemetry.Handler())
 	}
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/jobs", s.progress.ListJobs)
