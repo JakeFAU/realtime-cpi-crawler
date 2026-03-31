@@ -25,12 +25,8 @@ type PrometheusSink struct {
 	tracker *jobTracker
 }
 
-// NewPrometheusSink registers the collectors against the provided registry.
-func NewPrometheusSink(reg prometheus.Registerer) (*PrometheusSink, error) {
-	if reg == nil {
-		reg = prometheus.DefaultRegisterer
-	}
-	s := &PrometheusSink{
+func newPrometheusMetrics() *PrometheusSink {
+	return &PrometheusSink{
 		jobsStarted: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "crawler_jobs_started_total",
 			Help: "Total jobs that have started.",
@@ -63,6 +59,14 @@ func NewPrometheusSink(reg prometheus.Registerer) (*PrometheusSink, error) {
 		}, []string{"site", "status_class"}),
 		tracker: newJobTracker(),
 	}
+}
+
+// NewPrometheusSink registers the collectors against the provided registry.
+func NewPrometheusSink(reg prometheus.Registerer) (*PrometheusSink, error) {
+	if reg == nil {
+		reg = prometheus.DefaultRegisterer
+	}
+	s := newPrometheusMetrics()
 	for _, collector := range []prometheus.Collector{
 		s.jobsStarted,
 		s.jobsCompleted,
