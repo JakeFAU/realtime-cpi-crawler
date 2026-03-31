@@ -70,24 +70,31 @@ func NewServer(
 		progress:   NewProgressHandler(progressRepo, logger.Named("progress_api")),
 	}
 	r := chi.NewRouter()
+	s.routes(r)
+
+	s.router = r
+	return s
+}
+
+func (s *Server) routes(r chi.Router) {
 	r.Use(requestIDMiddleware)
 	r.Use(telemetry.Middleware)
 	r.Use(s.loggingMiddleware)
 	r.Use(s.recoverMiddleware)
 	// Use configured timeout or default to 60s
 	timeout := 60 * time.Second
-	if cfg.Server.TimeoutSeconds > 0 {
-		timeout = time.Duration(cfg.Server.TimeoutSeconds) * time.Second
+	if s.cfg.Server.TimeoutSeconds > 0 {
+		timeout = time.Duration(s.cfg.Server.TimeoutSeconds) * time.Second
 	}
 	r.Use(timeoutMiddleware(timeout))
-	if cfg.Auth.Enabled {
-		r.Use(apiKeyMiddleware(cfg.Auth.APIKey))
+	if s.cfg.Auth.Enabled {
+		r.Use(apiKeyMiddleware(s.cfg.Auth.APIKey))
 	}
 
 	r.Get("/healthz", s.healthz)
 	r.Get("/readyz", s.readyz)
-	if cfg.Metrics.Enabled {
-		r.Handle(cfg.Metrics.Path, telemetry.Handler())
+	if s.cfg.Metrics.Enabled {
+		r.Handle(s.cfg.Metrics.Path, telemetry.Handler())
 	}
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/jobs", s.progress.ListJobs)
@@ -106,9 +113,6 @@ func NewServer(
 			})
 		})
 	})
-
-	s.router = r
-	return s
 }
 
 // Handler returns the Router for use with http.Server.
