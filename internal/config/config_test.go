@@ -17,6 +17,7 @@ func TestLoadWithFileOverrides(t *testing.T) {
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
+	/* #nosec G101 */
 	configYAML := `
 server:
   port: 9090
@@ -269,6 +270,7 @@ func TestDatabaseResolveDSNFromComponents(t *testing.T) {
 	if err := cfg.resolveDSN(); err != nil {
 		t.Fatalf("resolveDSN() error = %v", err)
 	}
+	/* #nosec G101 */
 	want := "postgres://crawler:super-secret@10.1.1.5:6432/realtime?sslmode=require"
 	if cfg.DSN != want {
 		t.Fatalf("unexpected DSN built: got %q want %q", cfg.DSN, want)
