@@ -1,6 +1,6 @@
 module github.com/JakeFAU/realtime-cpi-crawler
 
-go 1.25.3
+go 1.24.3
 
 require (
 	cloud.google.com/go/pubsub/v2 v2.3.0
