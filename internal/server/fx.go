@@ -356,38 +356,38 @@ func setupProgress(
 	return app.progressHub, nil
 }
 
-func setupDispatcher(
+func setupHeadlessFetcher(app *App) crawler.Fetcher {
+	if !app.cfg.Headless.Enabled {
+		return nil
+	}
+	headless, err := headlessfetcher.NewChromedp(headlessfetcher.Config{
+		MaxParallel:       app.cfg.Headless.MaxParallel,
+		UserAgent:         app.cfg.Crawler.UserAgent,
+		NavigationTimeout: time.Duration(app.cfg.Headless.NavTimeoutSec) * time.Millisecond,
+	})
+	if err != nil {
+		app.logger.Warn("headless fetcher init failed", zap.Error(err))
+		return nil
+	}
+	app.headlessFetcher = headless
+	app.logger.Info("using headless fetcher", zap.Int("max_parallel", app.cfg.Headless.MaxParallel))
+	return headless
+}
+
+func setupWorkers(
 	app *App,
 	jobStore crawler.JobStore,
 	blobStore crawler.BlobStore,
 	publisher crawler.Publisher,
 	progressEmitter progress.Emitter,
-) (*dispatcher.Dispatcher, error) {
+	probeFetcher crawler.Fetcher,
+	headless crawler.Fetcher,
+	policy crawler.Policy,
+) []*worker.Worker {
 	hasher := sha256.New()
 	clock := system.New()
 	idGen := uuid.NewUUIDGenerator()
 	detect := detector.NewHeuristic(app.cfg.Headless.PromotionThresh)
-	probeFetcher := collyfetcher.New(collyfetcher.Config{
-		UserAgent:     app.cfg.Crawler.UserAgent,
-		RespectRobots: !app.cfg.Crawler.IgnoreRobots,
-		Timeout:       time.Duration(app.cfg.HTTP.TimeoutSeconds) * time.Second,
-	})
-	app.logger.Info("using colly probe fetcher", zap.String("user_agent", app.cfg.Crawler.UserAgent))
-	var headless crawler.Fetcher
-	if app.cfg.Headless.Enabled {
-		var err error
-		app.headlessFetcher, err = headlessfetcher.NewChromedp(headlessfetcher.Config{
-			MaxParallel:       app.cfg.Headless.MaxParallel,
-			UserAgent:         app.cfg.Crawler.UserAgent,
-			NavigationTimeout: time.Duration(app.cfg.Headless.NavTimeoutSec) * time.Millisecond,
-		})
-		if err != nil {
-			app.logger.Warn("headless fetcher init failed", zap.Error(err))
-		} else {
-			headless = app.headlessFetcher
-			app.logger.Info("using headless fetcher", zap.Int("max_parallel", app.cfg.Headless.MaxParallel))
-		}
-	}
 
 	workerCfg := worker.Config{
 		ContentType:    app.cfg.Storage.ContentType,
@@ -403,21 +403,6 @@ func setupDispatcher(
 		zap.Duration("job_timeout", workerCfg.JobTimeout),
 		zap.Duration("request_timeout", workerCfg.RequestTimeout),
 	)
-
-	var policy crawler.Policy
-	if app.cfg.RateLimit.Enabled {
-		policy = ratelimit.New(ratelimit.Config{
-			DefaultRPS:   app.cfg.RateLimit.DefaultRPS,
-			DefaultBurst: app.cfg.RateLimit.DefaultBurst,
-		})
-		app.logger.Info("rate limiter enabled",
-			zap.Float64("default_rps", app.cfg.RateLimit.DefaultRPS),
-			zap.Int("default_burst", app.cfg.RateLimit.DefaultBurst),
-		)
-	} else {
-		policy = simple.New()
-		app.logger.Info("rate limiter disabled, using simple policy")
-	}
 
 	var workers []*worker.Worker
 	for i := 0; i < app.cfg.Crawler.Concurrency; i++ {
@@ -439,5 +424,55 @@ func setupDispatcher(
 			app.logger.Named("worker").With(zap.Int("index", i)),
 		))
 	}
+	return workers
+}
+
+func setupPolicy(app *App) crawler.Policy {
+	if app.cfg.RateLimit.Enabled {
+		app.logger.Info("rate limiter enabled",
+			zap.Float64("default_rps", app.cfg.RateLimit.DefaultRPS),
+			zap.Int("default_burst", app.cfg.RateLimit.DefaultBurst),
+		)
+		return ratelimit.New(ratelimit.Config{
+			DefaultRPS:   app.cfg.RateLimit.DefaultRPS,
+			DefaultBurst: app.cfg.RateLimit.DefaultBurst,
+		})
+	}
+	app.logger.Info("rate limiter disabled, using simple policy")
+	return simple.New()
+}
+
+func setupProbeFetcher(app *App) crawler.Fetcher {
+	probeFetcher := collyfetcher.New(collyfetcher.Config{
+		UserAgent:     app.cfg.Crawler.UserAgent,
+		RespectRobots: !app.cfg.Crawler.IgnoreRobots,
+		Timeout:       time.Duration(app.cfg.HTTP.TimeoutSeconds) * time.Second,
+	})
+	app.logger.Info("using colly probe fetcher", zap.String("user_agent", app.cfg.Crawler.UserAgent))
+	return probeFetcher
+}
+
+func setupDispatcher(
+	app *App,
+	jobStore crawler.JobStore,
+	blobStore crawler.BlobStore,
+	publisher crawler.Publisher,
+	progressEmitter progress.Emitter,
+) (*dispatcher.Dispatcher, error) {
+	probeFetcher := setupProbeFetcher(app)
+	headless := setupHeadlessFetcher(app)
+	policy := setupPolicy(app)
+
+	workers := setupWorkers(
+		app,
+		jobStore,
+		blobStore,
+		publisher,
+		progressEmitter,
+		probeFetcher,
+		headless,
+		policy,
+	)
+
 	return dispatcher.New(app.queue, workers), nil
 }
