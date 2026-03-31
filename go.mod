@@ -11,8 +11,8 @@ require (
 	github.com/go-chi/chi/v5 v5.2.3
 	github.com/gocolly/colly/v2 v2.2.0
 	github.com/google/uuid v1.6.0
-	github.com/jackc/pgx/v5 v5.7.0
-	github.com/pashagolub/pgxmock/v4 v4.0.0
+	github.com/jackc/pgx/v5 v5.7.4
+	github.com/pashagolub/pgxmock/v4 v4.9.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
@@ -69,7 +69,7 @@ require (
 	github.com/grafana/regexp v0.0.0-20240518133315-a468a5bfb3bc // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
-	github.com/jackc/puddle/v2 v2.2.1 // indirect
+	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/kennygrant/sanitize v1.2.4 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect

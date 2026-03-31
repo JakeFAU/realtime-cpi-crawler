@@ -43,7 +43,7 @@ storage:
   prefix: logs
   content_type: text/plain
 database:
-  dsn: postgres://user:pass@127.0.0.1/db
+  dsn: postgres://user:password-placeholder@127.0.0.1/db
   retrieval_table: crawler
   progress_table: job_runs
   stats_table: stats
@@ -262,14 +262,14 @@ func TestDatabaseResolveDSNFromComponents(t *testing.T) {
 		Host:     "10.1.1.5",
 		Port:     6432,
 		User:     "crawler",
-		Password: "super-secret",
+		Password: "password-placeholder",
 		Name:     "realtime",
 		SSLMode:  "require",
 	}
 	if err := cfg.resolveDSN(); err != nil {
 		t.Fatalf("resolveDSN() error = %v", err)
 	}
-	want := "postgres://crawler:super-secret@10.1.1.5:6432/realtime?sslmode=require"
+	want := "postgres://crawler:password-placeholder@10.1.1.5:6432/realtime?sslmode=require"
 	if cfg.DSN != want {
 		t.Fatalf("unexpected DSN built: got %q want %q", cfg.DSN, want)
 	}

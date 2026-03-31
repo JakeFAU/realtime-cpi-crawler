@@ -3,7 +3,6 @@ package detector
 
 import (
 	"bytes"
-	"strings"
 
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/crawler"
 )
@@ -49,27 +48,24 @@ func (h *Heuristic) ShouldPromote(resp crawler.FetchResponse) bool {
 }
 
 func scriptDensityHigh(body []byte) bool {
-	lower := strings.ToLower(string(body))
-	total := len(lower)
+	total := len(body)
 	if total == 0 {
 		return false
 	}
 
-	const (
-		openTag  = "<script"
-		closeTag = "</script>"
-	)
+	upperBody := bytes.ToUpper(body)
+
 	scriptCoverage := 0
 	searchPos := 0
 
 	for {
-		relativeStart := strings.Index(lower[searchPos:], openTag)
+		relativeStart := bytes.Index(upperBody[searchPos:], []byte("<SCRIPT"))
 		if relativeStart == -1 {
 			break
 		}
 		start := searchPos + relativeStart
 
-		tagClose := strings.IndexByte(lower[start:], '>')
+		tagClose := bytes.IndexByte(body[start:], '>')
 		if tagClose == -1 {
 			// Treat the rest of the document as part of the malformed script.
 			scriptCoverage += total - start
@@ -77,13 +73,13 @@ func scriptDensityHigh(body []byte) bool {
 		}
 		contentStart := start + tagClose + 1
 
-		relativeEnd := strings.Index(lower[contentStart:], closeTag)
+		relativeEnd := bytes.Index(upperBody[contentStart:], []byte("</SCRIPT>"))
 		var nextSearch int
 		if relativeEnd == -1 {
 			// Script tag never closes; count the rest.
 			nextSearch = total
 		} else {
-			nextSearch = contentStart + relativeEnd + len(closeTag)
+			nextSearch = contentStart + relativeEnd + 9 // len("</script>")
 		}
 
 		scriptCoverage += nextSearch - start
