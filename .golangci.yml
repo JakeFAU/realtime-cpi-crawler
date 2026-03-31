@@ -1,6 +1,5 @@
 # This file is versioned and provides a curated, strict linting configuration.
 # We explicitly disable all linters and enable only a specific, high-value set.
-version: "2"
 run:
   # Use the Go version from your go.mod file.
   go: "1.25"

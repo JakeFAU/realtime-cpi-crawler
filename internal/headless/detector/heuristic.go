@@ -3,7 +3,6 @@ package detector
 
 import (
 	"bytes"
-	"strings"
 
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/crawler"
 )
@@ -49,27 +48,22 @@ func (h *Heuristic) ShouldPromote(resp crawler.FetchResponse) bool {
 }
 
 func scriptDensityHigh(body []byte) bool {
-	lower := strings.ToLower(string(body))
-	total := len(lower)
+	total := len(body)
 	if total == 0 {
 		return false
 	}
 
-	const (
-		openTag  = "<script"
-		closeTag = "</script>"
-	)
 	scriptCoverage := 0
 	searchPos := 0
 
 	for {
-		relativeStart := strings.Index(lower[searchPos:], openTag)
+		relativeStart := indexScriptOpen(body[searchPos:])
 		if relativeStart == -1 {
 			break
 		}
 		start := searchPos + relativeStart
 
-		tagClose := strings.IndexByte(lower[start:], '>')
+		tagClose := bytes.IndexByte(body[start:], '>')
 		if tagClose == -1 {
 			// Treat the rest of the document as part of the malformed script.
 			scriptCoverage += total - start
@@ -77,13 +71,13 @@ func scriptDensityHigh(body []byte) bool {
 		}
 		contentStart := start + tagClose + 1
 
-		relativeEnd := strings.Index(lower[contentStart:], closeTag)
+		relativeEnd := indexScriptClose(body[contentStart:])
 		var nextSearch int
 		if relativeEnd == -1 {
 			// Script tag never closes; count the rest.
 			nextSearch = total
 		} else {
-			nextSearch = contentStart + relativeEnd + len(closeTag)
+			nextSearch = contentStart + relativeEnd + 9 // len("</script>")
 		}
 
 		scriptCoverage += nextSearch - start
@@ -94,4 +88,70 @@ func scriptDensityHigh(body []byte) bool {
 		return false
 	}
 	return scriptCoverage*100/total >= 25
+}
+
+// equalFold checks if a and b are equal, treating upper and lower case ASCII letters as equal.
+func equalFold(a, b []byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := 0; i < len(a); i++ {
+		ca := a[i]
+		cb := b[i]
+		if ca >= 'A' && ca <= 'Z' {
+			ca += 'a' - 'A'
+		}
+		if cb >= 'A' && cb <= 'Z' {
+			cb += 'a' - 'A'
+		}
+		if ca != cb {
+			return false
+		}
+	}
+	return true
+}
+
+var (
+	scriptOpenTag  = []byte("<script")
+	scriptCloseTag = []byte("</script>")
+)
+
+// indexFold returns the index of the first instance of target in s,
+// ignoring case, or -1 if not present.
+// It is optimized for searching strings starting with '<'.
+func indexFold(s, target []byte) int {
+	if len(target) == 0 {
+		return 0
+	}
+	if len(s) < len(target) {
+		return -1
+	}
+
+	for i := 0; i <= len(s)-len(target); {
+		idx := bytes.IndexByte(s[i:], target[0])
+		if idx == -1 {
+			return -1
+		}
+		i += idx
+		if i > len(s)-len(target) {
+			return -1
+		}
+		if equalFold(s[i:i+len(target)], target) {
+			return i
+		}
+		i++
+	}
+	return -1
+}
+
+// indexScriptOpen returns the index of the first instance of "<script"
+// (case-insensitive) in s, or -1 if not present.
+func indexScriptOpen(s []byte) int {
+	return indexFold(s, scriptOpenTag)
+}
+
+// indexScriptClose returns the index of the first instance of "</script>"
+// (case-insensitive) in s, or -1 if not present.
+func indexScriptClose(s []byte) int {
+	return indexFold(s, scriptCloseTag)
 }

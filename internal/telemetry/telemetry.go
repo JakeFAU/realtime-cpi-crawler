@@ -124,48 +124,62 @@ func InitTelemetry(ctx context.Context, cfg *config.Config) (*sdktrace.TracerPro
 		}
 
 		// 2. Setup TRACING (Direct export to Google Cloud Trace)
-		var traceExporter sdktrace.SpanExporter
-		if cfg.Application.ProjectID != "" {
-			traceExporter, err = texporter.New(texporter.WithProjectID(cfg.Application.ProjectID))
-			if err != nil {
-				initErr = fmt.Errorf("failed to create google trace exporter: %w", err)
-				return
-			}
-		}
-
-		opts := []sdktrace.TracerProviderOption{
-			sdktrace.WithResource(res),
-			sdktrace.WithSampler(sdktrace.AlwaysSample()),
-		}
-		if traceExporter != nil {
-			opts = append(opts, sdktrace.WithBatcher(traceExporter))
-		}
-
-		tp := sdktrace.NewTracerProvider(opts...)
-		otel.SetTracerProvider(tp)
-		otel.SetTextMapPropagator(
-			propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}),
-		)
-
-		// 3. Setup METRICS (Bridge OpenTelemetry to the existing Prometheus Registry)
-		// This ensures OTel metrics AND your custom 'crawlerPagesTotal' vars appear on the same endpoint.
-		promExporter, err := otelprom.New(
-			otelprom.WithRegisterer(prometheus.DefaultRegisterer), // <--- KEY: Use the same registry as promauto
-		)
+		traceProv, err = setupTracing(cfg, res)
 		if err != nil {
-			initErr = fmt.Errorf("failed to create prometheus exporter: %w", err)
+			initErr = err
 			return
 		}
 
-		mp := metric.NewMeterProvider(
-			metric.WithResource(res),
-			metric.WithReader(promExporter),
-		)
-		otel.SetMeterProvider(mp)
-		traceProv = tp
-		meterProv = mp
+		// 3. Setup METRICS (Bridge OpenTelemetry to the existing Prometheus Registry)
+		meterProv, err = setupMetrics(res)
+		if err != nil {
+			initErr = err
+			return
+		}
 	})
 	return traceProv, meterProv, initErr
+}
+
+func setupTracing(cfg *config.Config, res *resource.Resource) (*sdktrace.TracerProvider, error) {
+	var traceExporter sdktrace.SpanExporter
+	var err error
+	if cfg.Application.ProjectID != "" {
+		traceExporter, err = texporter.New(texporter.WithProjectID(cfg.Application.ProjectID))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create google trace exporter: %w", err)
+		}
+	}
+
+	opts := []sdktrace.TracerProviderOption{
+		sdktrace.WithResource(res),
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+	}
+	if traceExporter != nil {
+		opts = append(opts, sdktrace.WithBatcher(traceExporter))
+	}
+
+	tp := sdktrace.NewTracerProvider(opts...)
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(
+		propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}),
+	)
+	return tp, nil
+}
+
+func setupMetrics(res *resource.Resource) (*metric.MeterProvider, error) {
+	promExporter, err := otelprom.New(
+		otelprom.WithRegisterer(prometheus.DefaultRegisterer), // <--- KEY: Use the same registry as promauto
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create prometheus exporter: %w", err)
+	}
+
+	mp := metric.NewMeterProvider(
+		metric.WithResource(res),
+		metric.WithReader(promExporter),
+	)
+	otel.SetMeterProvider(mp)
+	return mp, nil
 }
 
 // --- HTTP HANDLER & MIDDLEWARE ---
