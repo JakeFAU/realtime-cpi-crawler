@@ -8,14 +8,23 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/JakeFAU/realtime-cpi-crawler/internal/store"
 )
 
+// pgxIface is an interface for pgxpool.Pool to allow mocking.
+type pgxIface interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	Close()
+}
+
 // ProgressStore implements the store.ProgressRepository interface using Postgres.
 type ProgressStore struct {
-	pool *pgxpool.Pool
+	pool pgxIface
 }
 
 // NewProgressStore creates a new ProgressStore.
@@ -25,6 +34,11 @@ func NewProgressStore(ctx context.Context, dsn string) (*ProgressStore, error) {
 		return nil, fmt.Errorf("failed to create connection pool: %w", err)
 	}
 	return &ProgressStore{pool: pool}, nil
+}
+
+// NewProgressStoreWithPool creates a new ProgressStore with a given pool.
+func NewProgressStoreWithPool(pool pgxIface) *ProgressStore {
+	return &ProgressStore{pool: pool}
 }
 
 // Close closes the underlying connection pool.
