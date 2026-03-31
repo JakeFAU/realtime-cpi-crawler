@@ -173,6 +173,28 @@ func (a *App) closeObservability(ctx context.Context) {
 	}
 }
 
+func setupTelemetry(ctx context.Context, app *App) error {
+	tp, mp, err := telemetry.InitTelemetry(ctx, app.cfg)
+	if err != nil {
+		return fmt.Errorf("tracer init failed: %w", err)
+	}
+	app.tracerShutdown = tp.Shutdown
+	app.metricShutdown = mp.Shutdown
+	return nil
+}
+
+func setupAPIServer(app *App, jobStore crawler.JobStore, logger *zap.Logger) {
+	app.apiServer = api.NewServer(
+		jobStore,
+		app.dispatch,
+		uuid.NewUUIDGenerator(),
+		system.New(),
+		*app.cfg,
+		logger.Named("api"),
+		app.progressRepo,
+	)
+}
+
 // Build creates the application's dependencies.
 func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	logger, err := logging.New(cfg.Logging.Development)
@@ -187,12 +209,9 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	}
 
 	// Initialize tracing
-	tp, mp, err := telemetry.InitTelemetry(ctx, cfg)
-	if err != nil {
-		return nil, fmt.Errorf("tracer init failed: %w", err)
+	if err := setupTelemetry(ctx, app); err != nil {
+		return nil, err
 	}
-	app.tracerShutdown = tp.Shutdown
-	app.metricShutdown = mp.Shutdown
 
 	app.logger.Info("building application dependencies")
 	jobStore := memoryStorage.NewJobStore()
@@ -222,15 +241,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		return nil, err
 	}
 
-	app.apiServer = api.NewServer(
-		jobStore,
-		app.dispatch,
-		uuid.NewUUIDGenerator(),
-		system.New(),
-		*cfg,
-		logger.Named("api"),
-		app.progressRepo,
-	)
+	setupAPIServer(app, jobStore, logger)
 
 	return app, nil
 }
